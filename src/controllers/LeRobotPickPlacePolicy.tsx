@@ -186,8 +186,15 @@ function currentCtrl(data: MujocoData) {
   return Array.from(data.ctrl.slice(0, 6), (value) => Number(value));
 }
 
-function describeActionSource(mode: PolicyExecutionMode, hasModelAction: boolean) {
+function describeActionSource(
+  mode: PolicyExecutionMode,
+  hasModelAction: boolean,
+  gripperCloseFloor?: number,
+) {
   void mode;
+  if (hasModelAction && typeof gripperCloseFloor === 'number' && Number.isFinite(gripperCloseFloor)) {
+    return `raw remote policy + gripper close floor ${gripperCloseFloor.toFixed(3)}`;
+  }
   return hasModelAction ? 'raw remote policy' : 'raw remote policy waiting; holding controls';
 }
 
@@ -318,6 +325,10 @@ export function useLeRobotRemotePolicy({
   });
   const cameraPlanOptions = useMemo(
     () => createLeRobotCameraPlanOptions() ?? EMPTY_CAMERA_PLAN,
+    []
+  );
+  const gripperCloseFloor = useMemo(
+    () => parsePolicyCameraNumberParam('gripperCloseFloor'),
     []
   );
   const policyCameras = usePolicyCameraFramesFromMountedStreams(cameraPlanOptions);
@@ -484,7 +495,10 @@ export function useLeRobotRemotePolicy({
       const modelAction = copyVector(modelPolicyAction);
       const ctrl = currentCtrl(data);
       const state = currentState(model, data, stateMode);
-      const action = modelAction;
+      const action = [...modelAction];
+      if (typeof gripperCloseFloor === 'number' && Number.isFinite(gripperCloseFloor) && action[5] !== undefined) {
+        action[5] = Math.max(action[5], gripperCloseFloor);
+      }
 
       if (data.time - lastTelemetryTimeRef.current > 0.18) {
         onTelemetry?.({
@@ -496,7 +510,7 @@ export function useLeRobotRemotePolicy({
           modelAction,
           executionMode,
           running: enabled,
-          actionSource: describeActionSource(executionMode, true),
+          actionSource: describeActionSource(executionMode, true, gripperCloseFloor),
           cameraSource: cameraSourceRef.current,
           queueStrategy,
           prefetchThreshold: resolvedPrefetchThreshold,
@@ -535,6 +549,7 @@ export function useLeRobotRemotePolicy({
     stateMode,
     queueStrategy,
     resolvedPrefetchThreshold,
+    gripperCloseFloor,
   ]);
 
   return policy;

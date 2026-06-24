@@ -36,6 +36,7 @@ const maxStackXYDistance = readNumberArg('max-stack-xy-distance', Infinity);
 const minStackZDelta = readNumberArg('min-stack-z-delta', -Infinity);
 const inferenceUrl = readArg('inference-url', '');
 const screenshotPath = readArg('screenshot', '');
+const maxLiftScreenshotPath = readArg('max-lift-screenshot', '');
 const reportPath = readArg('report', '');
 const cameraFrameDir = readArg('camera-frame-dir', '');
 const initialBodyPoseText = readArg('initial-body-pose', '');
@@ -148,6 +149,50 @@ function summarizeTrajectory(samples, initialBodies, finalBodies, objectName) {
       maxZ: movingJawSamples.reduce((max, sample) => Math.max(max, sample.position[2]), -Infinity),
       minZ: movingJawSamples.reduce((min, sample) => Math.min(min, sample.position[2]), Infinity),
     },
+  };
+}
+
+function summarizeGraspAtMaxLift(samples, objectName) {
+  const objectSamples = samples
+    .map((sample) => ({ sample, position: sample.bodies?.[objectName] ?? null }))
+    .filter((entry) => entry.position);
+  const maxEntry = objectSamples.reduce((best, entry) => (
+    !best || entry.position[2] > best.position[2] ? entry : best
+  ), null);
+  if (!maxEntry) return null;
+
+  const bodies = maxEntry.sample.bodies ?? {};
+  const fixedJaw = bodies.gripper ?? null;
+  const movingJaw = bodies.moving_jaw_so101_v1 ?? null;
+  const jawMidpoint = fixedJaw && movingJaw
+    ? [
+      (fixedJaw[0] + movingJaw[0]) / 2,
+      (fixedJaw[1] + movingJaw[1]) / 2,
+      (fixedJaw[2] + movingJaw[2]) / 2,
+    ]
+    : null;
+  const objectOffsetFromJawMidpoint = jawMidpoint
+    ? [
+      maxEntry.position[0] - jawMidpoint[0],
+      maxEntry.position[1] - jawMidpoint[1],
+      maxEntry.position[2] - jawMidpoint[2],
+    ]
+    : null;
+  const objectContactBodies = (maxEntry.sample.contacts ?? [])
+    .filter((contact) => contact.body1 === objectName || contact.body2 === objectName)
+    .map((contact) => contact.body1 === objectName ? contact.body2 : contact.body1);
+
+  return {
+    time: maxEntry.sample.time,
+    object: maxEntry.position,
+    fixedJaw,
+    movingJaw,
+    jawMidpoint,
+    objectOffsetFromJawMidpoint,
+    objectOffsetDistanceFromJawMidpoint: objectOffsetFromJawMidpoint
+      ? Math.hypot(...objectOffsetFromJawMidpoint)
+      : null,
+    objectContactBodies,
   };
 }
 
@@ -267,9 +312,10 @@ try {
 
   const trajectorySamples = [];
   const sampleStartedAt = Date.now();
+  let maxLiftScreenshotZ = -Infinity;
   while (Date.now() - sampleStartedAt < durationMs) {
     await page.waitForTimeout(Math.max(50, sampleIntervalMs));
-    trajectorySamples.push(await page.evaluate(() => {
+    const sample = await page.evaluate(() => {
       const state = globalThis.__so101DebugState ?? null;
       return state ? {
         wallTime: Date.now(),
@@ -280,7 +326,13 @@ try {
         contacts: state.contacts,
         ncon: state.ncon,
       } : null;
-    }));
+    });
+    trajectorySamples.push(sample);
+    const objectZ = sample?.bodies?.[objectBody]?.[2];
+    if (maxLiftScreenshotPath && Number.isFinite(objectZ) && objectZ > maxLiftScreenshotZ) {
+      maxLiftScreenshotZ = objectZ;
+      await page.screenshot({ path: maxLiftScreenshotPath, fullPage: true });
+    }
   }
 
   const result = await page.evaluate(({ objectBody, targetBody }) => {
@@ -363,6 +415,10 @@ try {
     trajectorySamples.filter(Boolean),
     initialState?.bodies,
     result.bodies,
+    objectBody,
+  );
+  const graspAtMaxLift = summarizeGraspAtMaxLift(
+    trajectorySamples.filter(Boolean),
     objectBody,
   );
   const stack = summarizeStack(result.bodies, result.contactPairCounts, stackSpec);
@@ -467,6 +523,7 @@ try {
     movingJawContactCount,
     bodyMotion,
     trajectory,
+    graspAtMaxLift,
     stack,
     pageErrors,
     consoleErrors,
