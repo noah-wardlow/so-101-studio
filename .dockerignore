@@ -1,0 +1,9 @@
+node_modules
+dist
+artifacts
+.venv
+__pycache__
+*.py[cod]
+.DS_Store
+.env
+.env.*

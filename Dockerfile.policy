@@ -1,0 +1,30 @@
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+WORKDIR /app
+
+ARG PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+
+ENV HF_HOME=/data/huggingface \
+    POLICY_HOST=0.0.0.0 \
+    POLICY_PORT=8776 \
+    POLICY_DEVICE=cpu \
+    POLICY_SPACE=sim-radians-act \
+    UV_INDEX_STRATEGY=unsafe-best-match \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ffmpeg libglib2.0-0 libgl1 \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --group policy \
+  --index "${PYTORCH_INDEX_URL}" \
+  --index-strategy unsafe-best-match
+
+COPY scripts/lerobot_policy_server.py scripts/lerobot_policy_server.py
+COPY scripts/run_policy_server.sh scripts/run_policy_server.sh
+
+EXPOSE 8776
+
+CMD ["scripts/run_policy_server.sh"]

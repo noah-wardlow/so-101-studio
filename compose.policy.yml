@@ -1,0 +1,22 @@
+services:
+  policy:
+    build:
+      context: .
+      dockerfile: Dockerfile.policy
+      args:
+        PYTORCH_INDEX_URL: ${PYTORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    ports:
+      - "8776:8776"
+    environment:
+      MODEL_ID: davidlinjiahao/lerobot_so101_base_sim_pickplace
+      DATASET_ID: davidlinjiahao/lerobot_batch_001
+      POLICY_SPACE: sim-radians-act
+      POLICY_DEVICE: ${POLICY_DEVICE:-cpu}
+      POLICY_HOST: 0.0.0.0
+      POLICY_PORT: "8776"
+      HF_HOME: /data/huggingface
+    volumes:
+      - hf-cache:/data/huggingface
+
+volumes:
+  hf-cache:
