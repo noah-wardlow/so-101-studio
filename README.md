@@ -9,8 +9,13 @@ The default scene opens the MolmoAct2 SO-100/101 route:
 - policy endpoint: configure the MolmoAct2 inference URL in the UI
 - browser app: `http://127.0.0.1:3001/`
 
-MolmoAct2 is the default interactive route and is still being tuned for
-placement. The ACT 12D route below is the pick-place reference route:
+MolmoAct2 is the default interactive route. The default Molmo scene uses a
+nearby red target pad, hides that target from policy captures until the cube is
+lifted, then switches the task prompt from pickup to placement. Physical bin
+walls are off by default for Molmo because they block the gripper near the
+working target location. A small gripper action calibration bias is applied for
+Molmo so the simulated fingers close around the cube instead of shoving it.
+The ACT 12D route below is the pick-place reference route:
 
 - model: `davidlinjiahao/lerobot_so101_base_sim_pickplace`
 - dataset/stats: `davidlinjiahao/lerobot_batch_001`
@@ -76,6 +81,26 @@ cube-to-target distance. It writes:
 - `artifacts/act12-verify.json`
 - `artifacts/act12-verify.png`
 - `artifacts/act12-frames/`
+
+MolmoAct2 place verification uses the remote Molmo endpoint and the default
+route:
+
+```bash
+node scripts/verify_policy_rollout.mjs \
+  --url='http://127.0.0.1:3001/' \
+  --inference-url='https://.../infer' \
+  --duration-ms=75000 \
+  --actions-per-request=45 \
+  --min-responses=4 \
+  --max-target-distance=0.10 \
+  --min-cube-lift=0.04 \
+  --min-final-cube-lift=-0.01 \
+  --min-target-contact-count=1 \
+  --min-gripper-contact-count=80 \
+  --min-moving-jaw-contact-count=40 \
+  --object-body=red_cube \
+  --target-body=green_target
+```
 
 ## Policy Backend
 
@@ -148,6 +173,10 @@ Scene and physics tuning:
 - `cubeSolimp`
 - `cubeCondim`
 - `binWalls=false`
+- `hideGoalInPolicyUntilLift=false`
+- `gripperActionBias=-0.35`
+- `taskAfterLiftLift=0.04`
+- `autoPauseTicks=1`
 
 Policy scheduling:
 

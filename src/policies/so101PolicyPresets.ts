@@ -295,13 +295,13 @@ export const MOLMO_SO101_POLICY_PRESET: So101PolicyPreset = {
   redCubeSize: [0.02, 0.02, 0.02],
   tablePosition: [0.4, 0, 0.02],
   tableSize: [0.34, 0.42, 0.4],
-  greenTargetPosition: [0.4, -0.18, 0.42],
+  greenTargetPosition: [0.34, 0.18, 0.42],
   redCubeRgba: [0.9, 0.12, 0.08, 1],
   redCubeMass: 0.006,
   redCubeFriction: '4 0.8 0.08',
   redCubeCondim: 6,
   greenTargetSize: [0.09, 0.09, 0.004],
-  greenTargetRgba: [0.45, 0.28, 0.05, 0.45],
+  greenTargetRgba: [0.9, 0.05, 0.04, 0.7],
 };
 
 export function selectSo101PolicyPreset(value: string | null | undefined): So101PolicyPreset {

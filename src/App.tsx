@@ -185,18 +185,23 @@ const policyQueueStrategy = policyQueueStrategySearchParam(policyPreset.queueStr
 const policyPrefetchThreshold = optionalNumericSearchParam('prefetch') ?? policyPreset.prefetchThreshold;
 const policyTask = searchParams.get('task') ?? policyPreset.task;
 const taskAfterLiftParam = searchParams.get('taskAfterLift');
-const defaultMolmoTaskAfterLift = 'put the red cube into the target bin';
+const defaultMolmoTaskAfterLift = 'put the red cube onto the red target';
 const policyTaskAfterLift = taskAfterLiftParam === null
   ? policyPreset.id === 'molmo' ? defaultMolmoTaskAfterLift : ''
   : ['', '0', 'false', 'off', 'no'].includes(taskAfterLiftParam.toLowerCase())
     ? ''
     : taskAfterLiftParam;
-const policyTaskAfterLiftThreshold = numericSearchParam('taskAfterLiftLift', policyPreset.id === 'molmo' ? 0.06 : 0.075);
+const policyTaskAfterLiftThreshold = numericSearchParam('taskAfterLiftLift', policyPreset.id === 'molmo' ? 0.04 : 0.075);
 const policyAutoPauseOnLift = booleanSearchParam('autoPause', false);
 const policyAutoPauseLiftThreshold = numericSearchParam('autoPauseLift', policyPreset.id === 'molmo' ? 0.09 : 0.075);
-const policyAutoPauseStableTicks = numericSearchParam('autoPauseTicks', policyPreset.id === 'molmo' ? 5 : 3);
+const policyAutoPauseStableTicks = numericSearchParam('autoPauseTicks', policyPreset.id === 'molmo' ? 1 : 3);
 const showBinInPolicyAfterLift = booleanSearchParam('showBinInPolicyAfterLift', true);
+const hideGoalInPolicyUntilLift = booleanSearchParam('hideGoalInPolicyUntilLift', policyPreset.id === 'molmo');
 const resetSceneBeforePolicy = booleanSearchParam('resetScene', policyPreset.id !== 'act12');
+const gripperActionBias = numericSearchParam('gripperActionBias', policyPreset.id === 'molmo' ? -0.35 : 0);
+const policyActionBias = gripperActionBias === 0
+  ? undefined
+  : [0, 0, 0, 0, 0, gripperActionBias];
 
 function vectorSearchParam(
   name: string,
@@ -286,6 +291,22 @@ function revealBinInPolicyCameraPlan(cameraPlan: So101PolicyCameraPlan): So101Po
   };
 }
 
+function hideGoalInPolicyCameraPlan(cameraPlan: So101PolicyCameraPlan): So101PolicyCameraPlan {
+  const hiddenGeomNames = new Set(cameraPlan.defaults?.hiddenGeomNames ?? []);
+  hiddenGeomNames.add('green_target_geom');
+  return {
+    ...cameraPlan,
+    defaults: cameraPlan.defaults
+      ? {
+        ...cameraPlan.defaults,
+        hiddenGeomNames: Array.from(hiddenGeomNames),
+      }
+      : {
+        hiddenGeomNames: Array.from(hiddenGeomNames),
+      },
+  };
+}
+
 const redCubePosition = [
   numericSearchParam('targetX', policyPreset.redCubePosition[0]),
   numericSearchParam('targetY', policyPreset.redCubePosition[1]),
@@ -309,7 +330,7 @@ const redCubeSolref = searchParams.get('cubeSolref') ?? undefined;
 const redCubeSolimp = searchParams.get('cubeSolimp') ?? undefined;
 const includeAct12BinWalls = searchParams.has('binWalls')
   ? searchParams.get('binWalls') !== 'false'
-  : true;
+  : policyPreset.id !== 'molmo';
 
 const sceneConfig: SceneConfig = {
   src: '/models/so101/',
@@ -696,6 +717,7 @@ function SceneChildren({
   cameraPlan,
   resetOnTaskChange,
   clearQueueOnTaskChange,
+  actionBias,
   onPolicyTelemetry,
 }: {
   policyRunning: boolean;
@@ -713,6 +735,7 @@ function SceneChildren({
   cameraPlan: So101PolicyCameraPlan;
   resetOnTaskChange: boolean;
   clearQueueOnTaskChange: boolean;
+  actionBias?: number[];
   onPolicyTelemetry: (telemetry: PolicyTelemetry) => void;
 }) {
   return (
@@ -739,6 +762,7 @@ function SceneChildren({
           cameraPlan={cameraPlan}
           resetOnTaskChange={resetOnTaskChange}
           clearQueueOnTaskChange={clearQueueOnTaskChange}
+          actionBias={actionBias}
           onTelemetry={onPolicyTelemetry}
         />
       ) : null}
@@ -1075,11 +1099,15 @@ function So101Studio() {
     window.location.assign(url.toString());
   }, []);
 
-  const activePolicyCameraPlan = useMemo(() => (
-    policyTaskAfterLift && showBinInPolicyAfterLift && activePolicyTask === policyTaskAfterLift
+  const activePolicyCameraPlan = useMemo(() => {
+    const isAfterLiftTask = policyTaskAfterLift && activePolicyTask === policyTaskAfterLift;
+    const cameraPlan = isAfterLiftTask && showBinInPolicyAfterLift
       ? revealBinInPolicyCameraPlan(policyPreset.policyCamera)
-      : policyPreset.policyCamera
-  ), [activePolicyTask]);
+      : policyPreset.policyCamera;
+    return hideGoalInPolicyUntilLift && !isAfterLiftTask
+      ? hideGoalInPolicyCameraPlan(cameraPlan)
+      : cameraPlan;
+  }, [activePolicyTask]);
   const resetPolicyOnTaskChange = booleanSearchParam(
     'resetPolicyOnTaskChange',
     !(policyPreset.id === 'molmo' && policyTaskAfterLift),
@@ -1263,6 +1291,7 @@ function So101Studio() {
           cameraPlan={activePolicyCameraPlan}
           resetOnTaskChange={resetPolicyOnTaskChange}
           clearQueueOnTaskChange={clearQueueOnTaskChange}
+          actionBias={policyActionBias}
           onPolicyTelemetry={onPolicyTelemetry}
         />
         <ScenarioLighting preset="studio" intensity={1.55} />
