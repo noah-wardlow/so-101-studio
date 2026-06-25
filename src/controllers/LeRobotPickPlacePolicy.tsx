@@ -132,6 +132,7 @@ interface UseLeRobotRemotePolicyOptions {
   robotType?: string;
   stateMode?: LeRobotStateMode;
   cameraPlan?: LeRobotCameraPlanOptions;
+  resetOnTaskChange?: boolean;
   onTelemetry?: (telemetry: PolicyTelemetry) => void;
 }
 
@@ -346,6 +347,7 @@ export function useLeRobotRemotePolicy({
   robotType = ACT12_ROBOT_TYPE,
   stateMode = 'cube-to-target-12',
   cameraPlan,
+  resetOnTaskChange = true,
   onTelemetry,
 }: UseLeRobotRemotePolicyOptions) {
   const mujoco = useMujoco();
@@ -384,7 +386,7 @@ export function useLeRobotRemotePolicy({
     executionMode,
     actionsPerRequest,
     inferenceUrl,
-    task,
+    resetOnTaskChange ? task : undefined,
     robotType,
     frequency,
     stateMode,
@@ -589,13 +591,13 @@ export function useLeRobotRemotePolicy({
     policy,
     actionsPerRequest,
     inferenceUrl,
-    task,
+    resetOnTaskChange ? task : undefined,
     robotType,
     frequency,
     stateMode,
     queueStrategy,
     resolvedPrefetchThreshold,
-    cameraPlanOptions,
+    resetOnTaskChange ? cameraPlanOptions : undefined,
   ]);
 
   return policy;

@@ -678,6 +678,7 @@ function SceneChildren({
   robotType,
   stateMode,
   cameraPlan,
+  resetOnTaskChange,
   onPolicyTelemetry,
 }: {
   policyRunning: boolean;
@@ -693,6 +694,7 @@ function SceneChildren({
   robotType: string;
   stateMode: So101PolicyStateMode;
   cameraPlan: So101PolicyCameraPlan;
+  resetOnTaskChange: boolean;
   onPolicyTelemetry: (telemetry: PolicyTelemetry) => void;
 }) {
   return (
@@ -717,6 +719,7 @@ function SceneChildren({
           robotType={robotType}
           stateMode={stateMode}
           cameraPlan={cameraPlan}
+          resetOnTaskChange={resetOnTaskChange}
           onTelemetry={onPolicyTelemetry}
         />
       ) : null}
@@ -1028,6 +1031,7 @@ function So101Studio() {
       ? revealBinInPolicyCameraPlan(policyPreset.policyCamera)
       : policyPreset.policyCamera
   ), [activePolicyTask]);
+  const resetPolicyOnTaskChange = !(policyPreset.id === 'molmo' && policyTaskAfterLift);
 
   const resetSceneForPolicy = useCallback(() => {
     const debugGlobal = globalThis as typeof globalThis & CameraDebugGlobal;
@@ -1202,6 +1206,7 @@ function So101Studio() {
           robotType={policyPreset.robotType}
           stateMode={policyPreset.stateMode}
           cameraPlan={activePolicyCameraPlan}
+          resetOnTaskChange={resetPolicyOnTaskChange}
           onPolicyTelemetry={onPolicyTelemetry}
         />
         <ScenarioLighting preset="studio" intensity={1.55} />
