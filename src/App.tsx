@@ -1066,7 +1066,10 @@ function So101Studio() {
       ? revealBinInPolicyCameraPlan(policyPreset.policyCamera)
       : policyPreset.policyCamera
   ), [activePolicyTask]);
-  const resetPolicyOnTaskChange = !(policyPreset.id === 'molmo' && policyTaskAfterLift);
+  const resetPolicyOnTaskChange = booleanSearchParam(
+    'resetPolicyOnTaskChange',
+    !(policyPreset.id === 'molmo' && policyTaskAfterLift),
+  );
   const clearQueueOnTaskChange = policyPreset.id === 'molmo' && !!policyTaskAfterLift;
 
   const resetSceneForPolicy = useCallback(() => {
