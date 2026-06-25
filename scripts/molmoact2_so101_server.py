@@ -195,6 +195,12 @@ class MolmoAct2Runtime:
             )
 
         action_policy_chunk = as_numpy(out.actions).astype(np.float32)
+        if action_policy_chunk.ndim == 3:
+            if action_policy_chunk.shape[0] != 1:
+                raise ValueError(
+                    f"Expected one MolmoAct2 action batch, got shape {list(action_policy_chunk.shape)}"
+                )
+            action_policy_chunk = action_policy_chunk[0]
         if action_policy_chunk.ndim == 1:
             action_policy_chunk = action_policy_chunk[None, :]
         action_policy_chunk = action_policy_chunk[:, :6]
