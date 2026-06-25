@@ -295,7 +295,7 @@ export const MOLMO_SO101_POLICY_PRESET: So101PolicyPreset = {
   redCubeSize: [0.02, 0.02, 0.02],
   tablePosition: [0.4, 0, 0.02],
   tableSize: [0.34, 0.42, 0.4],
-  greenTargetPosition: [0.43, 0.18, 0.42],
+  greenTargetPosition: [0.4, -0.18, 0.42],
   redCubeRgba: [0.9, 0.12, 0.08, 1],
   redCubeMass: 0.006,
   redCubeFriction: '4 0.8 0.08',

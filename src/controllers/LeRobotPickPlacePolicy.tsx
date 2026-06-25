@@ -134,7 +134,6 @@ interface UseLeRobotRemotePolicyOptions {
   cameraPlan?: LeRobotCameraPlanOptions;
   resetOnTaskChange?: boolean;
   clearQueueOnTaskChange?: boolean;
-  actionBias?: number[];
   onTelemetry?: (telemetry: PolicyTelemetry) => void;
 }
 
@@ -351,7 +350,6 @@ export function useLeRobotRemotePolicy({
   cameraPlan,
   resetOnTaskChange = true,
   clearQueueOnTaskChange = false,
-  actionBias,
   onTelemetry,
 }: UseLeRobotRemotePolicyOptions) {
   const mujoco = useMujoco();
@@ -542,11 +540,6 @@ export function useLeRobotRemotePolicy({
     },
     onAction: ({ action: modelPolicyAction, observation: policyObservation, model, data }) => {
       const modelAction = copyVector(modelPolicyAction);
-      if (actionBias) {
-        for (let index = 0; index < Math.min(modelAction.length, actionBias.length); index += 1) {
-          modelAction[index] += actionBias[index] ?? 0;
-        }
-      }
       const ctrl = currentCtrl(data);
       const state = currentState(model, data, stateMode);
       const action = modelAction;
@@ -615,7 +608,6 @@ export function useLeRobotRemotePolicy({
     policy,
     actionsPerRequest,
     inferenceUrl,
-    actionBias,
     resetOnTaskChange ? task : undefined,
     robotType,
     frequency,

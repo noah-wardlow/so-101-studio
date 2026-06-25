@@ -9,13 +9,11 @@ The default scene opens the MolmoAct2 SO-100/101 route:
 - policy endpoint: configure the MolmoAct2 inference URL in the UI
 - browser app: `http://127.0.0.1:3001/`
 
-MolmoAct2 is the default interactive route. The default Molmo scene uses a
-nearby green target pad, hides that target from policy captures until the cube is
-lifted, then switches the task prompt from pickup to placement. Physical bin
-walls are off by default for Molmo because they block the gripper near the
-working target location. A small gripper action calibration bias is applied for
-Molmo so the simulated fingers close around the cube instead of shoving it.
-The ACT 12D route below is the pick-place reference route:
+MolmoAct2 is the default interactive route. The default Molmo scene is tuned for
+a clean pickup: once the cube is lifted with a real gripper contact, the policy
+pauses and holds the last policy controls. Continuing from pickup into placement
+is still experimental and can be enabled with `taskAfterLift=...`. The ACT 12D
+route below is the pick-place reference route:
 
 - model: `davidlinjiahao/lerobot_so101_base_sim_pickplace`
 - dataset/stats: `davidlinjiahao/lerobot_batch_001`
@@ -82,7 +80,7 @@ cube-to-target distance. It writes:
 - `artifacts/act12-verify.png`
 - `artifacts/act12-frames/`
 
-MolmoAct2 place verification uses the remote Molmo endpoint and the default
+MolmoAct2 pickup verification uses the remote Molmo endpoint and the default
 route:
 
 ```bash
@@ -92,12 +90,12 @@ node scripts/verify_policy_rollout.mjs \
   --duration-ms=75000 \
   --actions-per-request=45 \
   --min-responses=4 \
-  --max-target-distance=0.10 \
-  --min-cube-lift=0.06 \
-  --min-final-cube-lift=-0.01 \
-  --min-target-contact-count=1 \
-  --min-gripper-contact-count=80 \
-  --min-moving-jaw-contact-count=40 \
+  --max-target-distance=99 \
+  --min-cube-lift=0.07 \
+  --min-final-cube-lift=0.06 \
+  --min-target-contact-count=0 \
+  --min-gripper-contact-count=100 \
+  --min-moving-jaw-contact-count=60 \
   --object-body=red_cube \
   --target-body=green_target
 ```
@@ -174,9 +172,9 @@ Scene and physics tuning:
 - `cubeCondim`
 - `binWalls=false`
 - `hideGoalInPolicyUntilLift=false`
-- `gripperActionBias=-0.35`
 - `taskAfterLiftLift=0.06`
 - `autoPauseTicks=5`
+- `taskAfterLift=put%20the%20red%20cube%20onto%20the%20green%20target`
 
 Policy scheduling:
 
