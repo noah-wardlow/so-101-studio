@@ -29,19 +29,16 @@ import type {
   MujocoModel,
   SceneConfig,
 } from 'mujoco-react';
-import {
-  ACT12_POLICY_CAMERA,
-  LeRobotPolicyRunner,
-} from './controllers/LeRobotPickPlacePolicy';
+import { LeRobotPolicyRunner } from './controllers/LeRobotPickPlacePolicy';
 import type {
   PolicyQueueStrategy,
   PolicyTelemetry,
 } from './controllers/LeRobotPickPlacePolicy';
 import {
   createSo101SceneObjects,
-  SO101_POLICY_PRESET,
+  selectSo101PolicyPreset,
 } from './policies/so101PolicyPresets';
-import type { So101PolicyStateMode } from './policies/so101PolicyPresets';
+import type { So101PolicyCameraPlan, So101PolicyStateMode } from './policies/so101PolicyPresets';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -126,6 +123,17 @@ interface CameraDebugGlobal {
   __so101DebugState?: DebugState;
   __so101ContactHistory?: Array<DebugState['contacts'][number] & { time: number }>;
   __so101ContactPairCounts?: Record<string, number>;
+  __so101AutoPause?: {
+    armed: boolean;
+    triggered: boolean;
+    lift: number;
+    time: number;
+    qpos: number[];
+    ctrl: number[];
+    cube: [number, number, number] | null;
+    gripperContacts: number;
+    movingJawContacts: number;
+  };
 }
 
 interface HudElements {
@@ -149,17 +157,27 @@ function optionalNumericSearchParam(name: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function booleanSearchParam(name: string, fallback: boolean) {
+  const value = new URLSearchParams(window.location.search).get(name);
+  if (value === null) return fallback;
+  return !['0', 'false', 'off', 'no'].includes(value.toLowerCase());
+}
+
 function policyQueueStrategySearchParam(fallback: PolicyQueueStrategy): PolicyQueueStrategy {
   const value = new URLSearchParams(window.location.search).get('queue');
   return value === 'append' || value === 'replace' ? value : fallback;
 }
 
 const searchParams = new URLSearchParams(window.location.search);
-const policyPreset = SO101_POLICY_PRESET;
+const policyPreset = selectSo101PolicyPreset(searchParams.get('policy') ?? searchParams.get('preset'));
 const sceneFile = policyPreset.sceneFile;
 const homeJoints = policyPreset.homeJoints;
 const policyQueueStrategy = policyQueueStrategySearchParam(policyPreset.queueStrategy ?? 'replace');
 const policyPrefetchThreshold = optionalNumericSearchParam('prefetch') ?? policyPreset.prefetchThreshold;
+const policyTask = searchParams.get('task') ?? policyPreset.task;
+const policyAutoPauseOnLift = booleanSearchParam('autoPause', policyPreset.id === 'molmo');
+const policyAutoPauseLiftThreshold = numericSearchParam('autoPauseLift', policyPreset.id === 'molmo' ? 0.09 : 0.075);
+const policyAutoPauseStableTicks = numericSearchParam('autoPauseTicks', policyPreset.id === 'molmo' ? 5 : 3);
 
 function vectorSearchParam(
   name: string,
@@ -172,17 +190,48 @@ function vectorSearchParam(
   return [parts[0], parts[1], parts[2]];
 }
 
-const policyDebugCameras = [
-  {
-    name: 'policy front',
-    position: vectorSearchParam('policyCamPos', ACT12_POLICY_CAMERA.position),
-    lookAt: vectorSearchParam('policyCamLookAt', ACT12_POLICY_CAMERA.lookAt),
-    up: vectorSearchParam('policyCamUp', ACT12_POLICY_CAMERA.up),
-    fov: numericSearchParam('policyCamFov', ACT12_POLICY_CAMERA.fov),
-    width: ACT12_POLICY_CAMERA.width,
-    height: ACT12_POLICY_CAMERA.height,
-  },
-] satisfies DebugVirtualCamera[];
+function vectorTuple(value: unknown): [number, number, number] | null {
+  if (!Array.isArray(value) || value.length !== 3) return null;
+  const tuple = value.map(Number);
+  if (!tuple.every(Number.isFinite)) return null;
+  return [tuple[0], tuple[1], tuple[2]];
+}
+
+function createPolicyDebugCameras(cameraPlan: So101PolicyCameraPlan): DebugVirtualCamera[] {
+  return cameraPlan.cameraKeys.flatMap((key, index) => {
+    const stream = cameraPlan.streamOptions?.[key];
+    const position = vectorTuple(stream?.position);
+    const lookAt = vectorTuple(stream?.lookAt);
+    if (!position || !lookAt) return [];
+    const up = vectorTuple(stream?.up) ?? [0, 0, 1];
+    const fov = typeof stream?.fov === 'number'
+      ? stream.fov
+      : typeof cameraPlan.defaults?.fov === 'number'
+        ? cameraPlan.defaults.fov
+        : 50;
+    const width = typeof stream?.width === 'number'
+      ? stream.width
+      : typeof cameraPlan.defaults?.width === 'number'
+        ? cameraPlan.defaults.width
+        : 640;
+    const height = typeof stream?.height === 'number'
+      ? stream.height
+      : typeof cameraPlan.defaults?.height === 'number'
+        ? cameraPlan.defaults.height
+        : 480;
+    return [{
+      name: `policy ${key}`,
+      position: index === 0 ? vectorSearchParam('policyCamPos', position) : position,
+      lookAt: index === 0 ? vectorSearchParam('policyCamLookAt', lookAt) : lookAt,
+      up: index === 0 ? vectorSearchParam('policyCamUp', up) : up,
+      fov: index === 0 ? numericSearchParam('policyCamFov', fov) : fov,
+      width,
+      height,
+    }];
+  });
+}
+
+const policyDebugCameras = createPolicyDebugCameras(policyPreset.policyCamera);
 
 const redCubePosition = [
   numericSearchParam('targetX', policyPreset.redCubePosition[0]),
@@ -199,7 +248,9 @@ const redCubeSize = [
 const redCubeFriction = searchParams.get('cubeFriction') ?? undefined;
 const redCubeSolref = searchParams.get('cubeSolref') ?? undefined;
 const redCubeSolimp = searchParams.get('cubeSolimp') ?? undefined;
-const includeAct12BinWalls = searchParams.get('binWalls') === 'false' ? false : undefined;
+const includeAct12BinWalls = searchParams.has('binWalls')
+  ? searchParams.get('binWalls') !== 'false'
+  : policyPreset.id === 'act12';
 
 const sceneConfig: SceneConfig = {
   src: '/models/so101/',
@@ -566,6 +617,7 @@ function SceneProbe() {
 
 function SceneChildren({
   policyRunning,
+  heldPolicyCtrl,
   showPolicyCameraDebug,
   showMujocoCameraDebug,
   inferenceUrl,
@@ -576,9 +628,11 @@ function SceneChildren({
   task,
   robotType,
   stateMode,
+  cameraPlan,
   onPolicyTelemetry,
 }: {
   policyRunning: boolean;
+  heldPolicyCtrl: number[] | null;
   showPolicyCameraDebug: boolean;
   showMujocoCameraDebug: boolean;
   inferenceUrl: string;
@@ -589,11 +643,13 @@ function SceneChildren({
   task: string;
   robotType: string;
   stateMode: So101PolicyStateMode;
+  cameraPlan: So101PolicyCameraPlan;
   onPolicyTelemetry: (telemetry: PolicyTelemetry) => void;
 }) {
   return (
     <>
       <SceneProbe />
+      <HeldPolicyControls ctrl={heldPolicyCtrl} enabled={!policyRunning} />
       <SetupDebugBridge policyRunning={policyRunning} />
       <Debug
         showCameras={showMujocoCameraDebug}
@@ -611,11 +667,29 @@ function SceneChildren({
           task={task}
           robotType={robotType}
           stateMode={stateMode}
+          cameraPlan={cameraPlan}
           onTelemetry={onPolicyTelemetry}
         />
       ) : null}
     </>
   );
+}
+
+function HeldPolicyControls({
+  ctrl,
+  enabled,
+}: {
+  ctrl: number[] | null;
+  enabled: boolean;
+}) {
+  useBeforePhysicsStep(({ data }) => {
+    if (!enabled || !ctrl) return;
+    for (let i = 0; i < Math.min(6, ctrl.length, data.ctrl.length); i += 1) {
+      data.ctrl[i] = ctrl[i];
+    }
+  });
+
+  return null;
 }
 
 function JointStateHud({
@@ -716,6 +790,7 @@ function PolicyDetailSection({
 
 function PolicyHud({
   policyRunning,
+  autoPauseOnLift,
   showPolicyCameraDebug,
   setShowPolicyCameraDebug,
   showMujocoCameraDebug,
@@ -729,6 +804,7 @@ function PolicyHud({
   onToggleRun,
 }: {
   policyRunning: boolean;
+  autoPauseOnLift: boolean;
   showPolicyCameraDebug: boolean;
   setShowPolicyCameraDebug: (value: boolean) => void;
   showMujocoCameraDebug: boolean;
@@ -761,6 +837,7 @@ function PolicyHud({
           <span data-policy-source>Action source: paused</span>
           <span data-policy-camera>Cameras: waiting</span>
           <span data-policy-timing>Timing: waiting</span>
+          <span data-policy-autopause>Auto-pause: {autoPauseOnLift ? `on lift >= ${policyAutoPauseLiftThreshold.toFixed(3)} m` : 'off'}</span>
         </div>
 
         <FieldGroup className="gap-3">
@@ -830,7 +907,7 @@ function PolicyHud({
           <span>Preset: {policyPreset.label}</span>
           <span>Dataset: {policyPreset.sourceRepo}</span>
           <span>Model: {policyPreset.modelId}</span>
-          <span>Task: {policyPreset.task}</span>
+          <span>Task: {policyTask}</span>
           <span>State: {policyPreset.stateMode}</span>
           <span data-policy-execution>Execution: raw-act</span>
           <span data-policy-model>Model: not connected</span>
@@ -875,18 +952,119 @@ function PolicyHud({
 
 function So101Studio() {
   const [policyRunning, setPolicyRunning] = useState(false);
+  const [heldPolicyCtrl, setHeldPolicyCtrl] = useState<number[] | null>(null);
   const [showPolicyCameraDebug, setShowPolicyCameraDebug] = useState(false);
   const [showMujocoCameraDebug, setShowMujocoCameraDebug] = useState(false);
   const [inferenceUrl, setInferenceUrl] = useState(policyPreset.inferenceUrl);
   const [actionsPerRequest, setActionsPerRequest] = useState(policyPreset.actionsPerRequest);
+  const startTimerRef = useRef<number | null>(null);
+  const autoPauseInitialCubeZRef = useRef<number | null>(null);
+  const autoPauseStableTicksRef = useRef(0);
 
   const onPolicyTelemetry = useCallback((telemetry: PolicyTelemetry) => {
     updatePolicyHud(telemetry);
   }, []);
 
-  const toggleRun = useCallback(() => {
-    setPolicyRunning((running) => !running);
+  const resetSceneForPolicy = useCallback(() => {
+    const debugGlobal = globalThis as typeof globalThis & CameraDebugGlobal;
+    autoPauseInitialCubeZRef.current = null;
+    autoPauseStableTicksRef.current = 0;
+    setHeldPolicyCtrl(null);
+    debugGlobal.__so101AutoPause = {
+      armed: policyAutoPauseOnLift,
+      triggered: false,
+      lift: 0,
+      time: 0,
+      qpos: [],
+      ctrl: [],
+      cube: null,
+      gripperContacts: 0,
+      movingJawContacts: 0,
+    };
+    setHudText('[data-policy-autopause]', `Auto-pause: ${policyAutoPauseOnLift ? 'armed' : 'off'}`);
+    debugGlobal.__so101SetRobotState?.(homeJoints, homeJoints);
+    debugGlobal.__so101SetObjectPose?.('red_cube', redCubePosition);
   }, []);
+
+  const toggleRun = useCallback(() => {
+    if (policyRunning) {
+      if (startTimerRef.current !== null) {
+        window.clearTimeout(startTimerRef.current);
+        startTimerRef.current = null;
+      }
+      setPolicyRunning(false);
+      return;
+    }
+
+    resetSceneForPolicy();
+    setPolicyRunning(false);
+    if (startTimerRef.current !== null) window.clearTimeout(startTimerRef.current);
+    startTimerRef.current = window.setTimeout(() => {
+      startTimerRef.current = null;
+      setPolicyRunning(true);
+    }, 200);
+  }, [policyRunning, resetSceneForPolicy]);
+
+  useEffect(() => () => {
+    if (startTimerRef.current !== null) {
+      window.clearTimeout(startTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!policyRunning || !policyAutoPauseOnLift) return undefined;
+
+    const interval = window.setInterval(() => {
+      const debugGlobal = globalThis as typeof globalThis & CameraDebugGlobal;
+      const state = debugGlobal.__so101DebugState;
+      const cube = state?.bodies.red_cube;
+      if (!cube) return;
+
+      if (autoPauseInitialCubeZRef.current === null) {
+        autoPauseInitialCubeZRef.current = cube[2];
+      }
+
+      const lift = cube[2] - autoPauseInitialCubeZRef.current;
+      const hasCurrentGripperContact = state.contacts.some((contact) => (
+        contactPairKey(contact.body1, contact.body2) === contactPairKey('red_cube', 'gripper')
+      ));
+      const hasCurrentMovingJawContact = state.contacts.some((contact) => (
+        contactPairKey(contact.body1, contact.body2) === contactPairKey('red_cube', 'moving_jaw_so101_v1')
+      ));
+      const gripperContacts = state.contacts.filter((contact) => (
+        contactPairKey(contact.body1, contact.body2) === contactPairKey('red_cube', 'gripper')
+      )).length;
+      const movingJawContacts = state.contacts.filter((contact) => (
+        contactPairKey(contact.body1, contact.body2) === contactPairKey('red_cube', 'moving_jaw_so101_v1')
+      )).length;
+
+      if (lift >= policyAutoPauseLiftThreshold && hasCurrentGripperContact && hasCurrentMovingJawContact) {
+        autoPauseStableTicksRef.current += 1;
+      } else {
+        autoPauseStableTicksRef.current = 0;
+      }
+
+      if (autoPauseStableTicksRef.current >= policyAutoPauseStableTicks) {
+        autoPauseStableTicksRef.current = 0;
+        setHeldPolicyCtrl(state.ctrl);
+        debugGlobal.__so101AutoPause = {
+          armed: true,
+          triggered: true,
+          lift,
+          time: state.time,
+          qpos: state.qpos,
+          ctrl: state.ctrl,
+          cube,
+          gripperContacts,
+          movingJawContacts,
+        };
+        setHudText('[data-policy-autopause]', `Auto-pause: lifted cube (${lift.toFixed(3)} m)`);
+        setPolicyRunning(false);
+      }
+    }, 100);
+
+    return () => window.clearInterval(interval);
+  }, [policyRunning]);
 
   return (
     <MujocoProvider>
@@ -901,7 +1079,7 @@ function So101Studio() {
         }}
         dpr={[1, 2]}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
-        renderOptions={policyRunning ? undefined : { meshNormalSmoothing: true }}
+        renderOptions={{ meshNormalSmoothing: true }}
         style={{ width: '100%', height: '100%' }}
       >
         <color attach="background" args={['#d8ddd8']} />
@@ -914,6 +1092,7 @@ function So101Studio() {
         <LoadingOverlay />
         <SceneChildren
           policyRunning={policyRunning}
+          heldPolicyCtrl={heldPolicyCtrl}
           showPolicyCameraDebug={showPolicyCameraDebug}
           showMujocoCameraDebug={showMujocoCameraDebug}
           inferenceUrl={inferenceUrl}
@@ -921,9 +1100,10 @@ function So101Studio() {
           queueStrategy={policyQueueStrategy}
           prefetchThreshold={policyPrefetchThreshold}
           frequency={policyPreset.frequency}
-          task={policyPreset.task}
+          task={policyTask}
           robotType={policyPreset.robotType}
           stateMode={policyPreset.stateMode}
+          cameraPlan={policyPreset.policyCamera}
           onPolicyTelemetry={onPolicyTelemetry}
         />
         <ScenarioLighting preset="studio" intensity={1.55} />
@@ -931,6 +1111,7 @@ function So101Studio() {
       <JointStateHud policyRunning={policyRunning} />
       <PolicyHud
         policyRunning={policyRunning}
+        autoPauseOnLift={policyAutoPauseOnLift}
         showPolicyCameraDebug={showPolicyCameraDebug}
         setShowPolicyCameraDebug={setShowPolicyCameraDebug}
         showMujocoCameraDebug={showMujocoCameraDebug}

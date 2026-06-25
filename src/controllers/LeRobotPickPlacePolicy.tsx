@@ -34,6 +34,10 @@ export const ACT12_POLICY_CAMERA = {
   height: 480,
 } as const;
 export type LeRobotStateMode = 'cube-to-target-12';
+export type LeRobotCameraPlanOptions = Omit<
+  CreatePolicyCameraFrameCapturePlanOptions,
+  'cameras' | 'sites' | 'bodies'
+>;
 
 const SO101_POLICY_ACTUATORS = [
   ModelActuators.so101.shoulder_pan,
@@ -85,11 +89,8 @@ interface LeRobotPolicyResponse {
 
 interface LeRobotDebugGlobal {
   __lerobotCameraFrames?: {
-    front?: string;
-    image?: string;
-    overhead?: string;
-    wrist?: string;
     at: number;
+    [key: string]: string | number | undefined;
   };
   __lerobotCameraFrameHistory?: NonNullable<LeRobotDebugGlobal['__lerobotCameraFrames']>[];
   __lerobotPolicyDebug?: Array<{
@@ -124,6 +125,7 @@ interface UseLeRobotRemotePolicyOptions {
   task?: string;
   robotType?: string;
   stateMode?: LeRobotStateMode;
+  cameraPlan?: LeRobotCameraPlanOptions;
   onTelemetry?: (telemetry: PolicyTelemetry) => void;
 }
 
@@ -208,11 +210,6 @@ function setPolicyDebugCameraFrames(frames: NonNullable<LeRobotDebugGlobal['__le
   global.__lerobotCameraFrameHistory = history;
 }
 
-type LeRobotCameraPlanOptions = Omit<
-  CreatePolicyCameraFrameCapturePlanOptions,
-  'cameras' | 'sites' | 'bodies'
->;
-
 const CAPTURE_BACKGROUND = '#d8ddd8';
 const CAPTURE_HIDDEN_GEOM_GROUPS = [3, 4] as const;
 const CAPTURE_HIDDEN_FLOOR_GEOMS = ['floor', 'floor_box_geom'] as const;
@@ -238,7 +235,23 @@ function parsePolicyCameraNumberParam(name: string): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function createLeRobotCameraPlanOptions(): LeRobotCameraPlanOptions | null {
+function cloneCameraPlanOptions(options: LeRobotCameraPlanOptions): LeRobotCameraPlanOptions {
+  return {
+    ...options,
+    cameraKeys: [...options.cameraKeys],
+    defaults: options.defaults ? { ...options.defaults } : undefined,
+    streamOptions: options.streamOptions
+      ? Object.fromEntries(
+        Object.entries(options.streamOptions).map(([key, streamOptions]) => [
+          key,
+          { ...streamOptions },
+        ]),
+      )
+      : undefined,
+  };
+}
+
+function createDefaultLeRobotCameraPlanOptions(): LeRobotCameraPlanOptions {
   const defaults = {
     width: 640,
     type: 'image/jpeg',
@@ -283,6 +296,38 @@ function createLeRobotCameraPlanOptions(): LeRobotCameraPlanOptions | null {
   };
 }
 
+function createLeRobotCameraPlanOptions(basePlan?: LeRobotCameraPlanOptions): LeRobotCameraPlanOptions | null {
+  const plan = cloneCameraPlanOptions(basePlan ?? createDefaultLeRobotCameraPlanOptions());
+  const firstExplicitKey = plan.cameraKeys.find((key) => {
+    const stream = plan.streamOptions?.[key];
+    return Boolean(stream?.position || stream?.lookAt);
+  });
+
+  if (!firstExplicitKey) return plan;
+
+  const position = parsePolicyCameraVectorParam('policyCamPos');
+  const lookAt = parsePolicyCameraVectorParam('policyCamLookAt');
+  const up = parsePolicyCameraVectorParam('policyCamUp');
+  const fov = parsePolicyCameraNumberParam('policyCamFov');
+  if (!position && !lookAt && !up && fov === undefined) return plan;
+
+  const streamOptions = {
+    ...(plan.streamOptions ?? {}),
+    [firstExplicitKey]: {
+      ...(plan.streamOptions?.[firstExplicitKey] ?? {}),
+      ...(position ? { position } : {}),
+      ...(lookAt ? { lookAt } : {}),
+      ...(up ? { up } : {}),
+      ...(fov === undefined ? {} : { fov }),
+    },
+  };
+
+  return {
+    ...plan,
+    streamOptions,
+  };
+}
+
 export function useLeRobotRemotePolicy({
   enabled,
   executionMode,
@@ -294,6 +339,7 @@ export function useLeRobotRemotePolicy({
   task = ACT12_TASK,
   robotType = ACT12_ROBOT_TYPE,
   stateMode = 'cube-to-target-12',
+  cameraPlan,
   onTelemetry,
 }: UseLeRobotRemotePolicyOptions) {
   const mujoco = useMujoco();
@@ -317,8 +363,8 @@ export function useLeRobotRemotePolicy({
     enabled,
   });
   const cameraPlanOptions = useMemo(
-    () => createLeRobotCameraPlanOptions() ?? EMPTY_CAMERA_PLAN,
-    []
+    () => createLeRobotCameraPlanOptions(cameraPlan) ?? EMPTY_CAMERA_PLAN,
+    [cameraPlan]
   );
   const policyCameras = usePolicyCameraFramesFromMountedStreams(cameraPlanOptions);
 
@@ -338,6 +384,7 @@ export function useLeRobotRemotePolicy({
     stateMode,
     queueStrategy,
     prefetchThreshold,
+    cameraPlanOptions,
   ]);
 
   const resolvedPrefetchThreshold = prefetchThreshold
@@ -373,9 +420,10 @@ export function useLeRobotRemotePolicy({
 
       const images: Record<string, string> = frameBundle?.images ?? {};
       const preferredFrame = frameBundle
-        ? frameBundle.frames.front
+          ? frameBundle.frames.front
           ?? frameBundle.frames.top
           ?? frameBundle.frames.side
+          ?? frameBundle.frames.wrist
           ?? Object.values(frameBundle.frames)[0]
         : undefined;
       if (frameBundle && preferredFrame) {
@@ -535,6 +583,7 @@ export function useLeRobotRemotePolicy({
     stateMode,
     queueStrategy,
     resolvedPrefetchThreshold,
+    cameraPlanOptions,
   ]);
 
   return policy;

@@ -7,6 +7,7 @@ import io
 import json
 import os
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -22,18 +23,65 @@ DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8000
 DEFAULT_TASK = "pick up the cube and place it into the target bin"
 DEFAULT_NORM_TAG = "so100_so101_molmoact2"
+DEFAULT_SEED = 1005
+
+
+def env_default_float_list(name: str, fallback: list[float], expected_length: int) -> list[float]:
+    value = os.environ.get(name)
+    if value is None:
+        return fallback
+    try:
+        result = [float(part.strip()) for part in value.split(",")]
+    except ValueError as exc:
+        raise ValueError(f"{name} must be comma-separated floats, got {value!r}") from exc
+    if len(result) != expected_length:
+        raise ValueError(f"{name} must contain {expected_length} values, got {len(result)}")
+    return result
+
 
 SO101_GRIPPER_MIN_RAD = np.deg2rad(-10.0)
 SO101_GRIPPER_MAX_RAD = np.deg2rad(100.0)
-SO101_POLICY_HOME_DEG = np.asarray(
-    [1.9561, -98.7437, 98.9242, 74.8198, -51.4530],
-    dtype=np.float32,
-)
+SO101_POLICY_GRIPPER_STATE_MIN = 0.9435578
+SO101_POLICY_GRIPPER_STATE_MAX = 44.1375560
+SO101_POLICY_GRIPPER_ACTION_MIN = -0.3016557
+SO101_POLICY_GRIPPER_ACTION_MAX = 44.7464934
+
+# MolmoAct2-SO100_101 was trained on LeRobot SO-100/101 motor features:
+# arm joints in calibrated servo degrees and gripper in the raw robot-scale
+# range recorded in norm_stats.json. Those are not the same coordinate
+# system as the geometric MuJoCo hinge radians.
+#
+# This affine bridge anchors the current MuJoCo visual home to the median
+# state of the checkpoint's SO100/SO101 norm stats and applies the known
+# sign flips needed to keep the physical arm convention from folding the
+# simulated arm through itself.
 SO101_SIM_HOME_RAD = np.asarray(
-    [0.03414, -1.7234, 1.72655, 1.30585, -0.89802],
+    [0.069314, -1.685636, 0.810382, 1.600638, -1.396152],
     dtype=np.float32,
 )
-SO101_SIM_TO_POLICY_OFFSET_DEG = SO101_POLICY_HOME_DEG - np.rad2deg(SO101_SIM_HOME_RAD)
+SO101_POLICY_HOME_DEG = np.asarray(
+    [3.0663757, 123.1648209, 124.3993006, 57.8860546, -11.0374367],
+    dtype=np.float32,
+)
+SO101_SIM_TO_POLICY_SIGN = np.asarray(
+    env_default_float_list("SO101_SIM_TO_POLICY_SIGN", [1.0, -1.0, 1.0, -1.0, 1.0], 5),
+    dtype=np.float32,
+)
+SO101_SIM_TO_POLICY_OFFSET_DEG = SO101_POLICY_HOME_DEG - (
+    SO101_SIM_TO_POLICY_SIGN * np.rad2deg(SO101_SIM_HOME_RAD)
+)
+SO101_SIM_ACTION_BIAS_RAD = np.asarray(
+    env_default_float_list("SO101_SIM_ACTION_BIAS_RAD", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 6),
+    dtype=np.float32,
+)
+SO101_SIM_CTRL_MIN_RAD = np.asarray(
+    [-1.91986, -1.74533, -1.69, -1.65806, -2.74385, SO101_GRIPPER_MIN_RAD],
+    dtype=np.float32,
+)
+SO101_SIM_CTRL_MAX_RAD = np.asarray(
+    [1.91986, 1.74533, 1.69, 1.65806, 2.84121, SO101_GRIPPER_MAX_RAD],
+    dtype=np.float32,
+)
 
 
 def env_default(name: str, fallback: str) -> str:
@@ -90,12 +138,16 @@ def decode_image(value: str | None) -> Image.Image | None:
 def sim_state_to_policy_units(state: np.ndarray) -> np.ndarray:
     robot_state = np.asarray(state[:6], dtype=np.float32)
     policy_state = np.empty(6, dtype=np.float32)
-    policy_state[:5] = np.rad2deg(robot_state[:5]) + SO101_SIM_TO_POLICY_OFFSET_DEG
+    policy_state[:5] = (
+        SO101_SIM_TO_POLICY_SIGN * np.rad2deg(robot_state[:5])
+        + SO101_SIM_TO_POLICY_OFFSET_DEG
+    )
     gripper = np.clip(robot_state[5], SO101_GRIPPER_MIN_RAD, SO101_GRIPPER_MAX_RAD)
     policy_state[5] = (
         (gripper - SO101_GRIPPER_MIN_RAD)
         / (SO101_GRIPPER_MAX_RAD - SO101_GRIPPER_MIN_RAD)
-        * 100.0
+        * (SO101_POLICY_GRIPPER_STATE_MAX - SO101_POLICY_GRIPPER_STATE_MIN)
+        + SO101_POLICY_GRIPPER_STATE_MIN
     )
     return policy_state
 
@@ -103,12 +155,20 @@ def sim_state_to_policy_units(state: np.ndarray) -> np.ndarray:
 def policy_action_to_sim_radians(action: np.ndarray) -> np.ndarray:
     policy_action = np.asarray(action[:6], dtype=np.float32)
     sim_action = np.empty(6, dtype=np.float32)
-    sim_action[:5] = np.deg2rad(policy_action[:5] - SO101_SIM_TO_POLICY_OFFSET_DEG)
-    gripper_percent = np.clip(policy_action[5], 0.0, 100.0)
-    sim_action[5] = SO101_GRIPPER_MIN_RAD + (gripper_percent / 100.0) * (
-        SO101_GRIPPER_MAX_RAD - SO101_GRIPPER_MIN_RAD
+    sim_action[:5] = np.deg2rad(
+        SO101_SIM_TO_POLICY_SIGN * (policy_action[:5] - SO101_SIM_TO_POLICY_OFFSET_DEG)
     )
-    return sim_action
+    gripper_policy = np.clip(
+        policy_action[5],
+        SO101_POLICY_GRIPPER_ACTION_MIN,
+        SO101_POLICY_GRIPPER_ACTION_MAX,
+    )
+    sim_action[5] = SO101_GRIPPER_MIN_RAD + (
+        (gripper_policy - SO101_POLICY_GRIPPER_ACTION_MIN)
+        / (SO101_POLICY_GRIPPER_ACTION_MAX - SO101_POLICY_GRIPPER_ACTION_MIN)
+    ) * (SO101_GRIPPER_MAX_RAD - SO101_GRIPPER_MIN_RAD)
+    sim_action += SO101_SIM_ACTION_BIAS_RAD
+    return np.clip(sim_action, SO101_SIM_CTRL_MIN_RAD, SO101_SIM_CTRL_MAX_RAD)
 
 
 def as_numpy(value: Any) -> np.ndarray:
@@ -117,28 +177,40 @@ def as_numpy(value: Any) -> np.ndarray:
     return np.asarray(value)
 
 
-def ordered_images(images: dict[str, str]) -> list[Image.Image]:
+def canonical_image_key(key: str) -> str:
+    if key.startswith("observation.images."):
+        return key.removeprefix("observation.images.")
+    return key
+
+
+def ordered_image_entries(images: dict[str, str]) -> list[tuple[str, Image.Image]]:
     preferred_keys = [
         "top",
         "side",
+        "external",
+        "wrist",
         "front",
         "image",
         "observation.images.top",
         "observation.images.side",
+        "observation.images.external",
+        "observation.images.wrist",
         "observation.images.front",
         "observation.images.image",
     ]
-    result: list[Image.Image] = []
+    result: list[tuple[str, Image.Image]] = []
     seen: set[str] = set()
     for key in preferred_keys + sorted(images):
-        if key in seen:
+        canonical_key = canonical_image_key(key)
+        if canonical_key in seen:
             continue
-        seen.add(key)
         image = decode_image(images.get(key))
         if image is not None:
-            result.append(image)
+            result.append((canonical_key, image))
+            seen.add(canonical_key)
     if len(result) == 1:
-        result.append(result[0].copy())
+        key, image = result[0]
+        result.append((f"{key}_copy", image.copy()))
     return result
 
 
@@ -150,6 +222,7 @@ class MolmoAct2Runtime:
         dtype: torch.dtype,
         norm_tag: str,
         num_steps: int,
+        seed: int,
         enable_cuda_graph: bool,
     ):
         self.model_id = model_id
@@ -157,7 +230,12 @@ class MolmoAct2Runtime:
         self.dtype = dtype
         self.norm_tag = norm_tag
         self.num_steps = num_steps
+        self.seed = seed
         self.enable_cuda_graph = enable_cuda_graph
+        self._lock = threading.Lock()
+        self._generator: torch.Generator | None = None
+        self._episode_index = -1
+        self._request_index = 0
 
         self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
         self.model = AutoModelForImageTextToText.from_pretrained(
@@ -166,33 +244,51 @@ class MolmoAct2Runtime:
             dtype=dtype,
         ).to(device).eval()
 
+    def _make_generator(self) -> torch.Generator:
+        try:
+            generator = torch.Generator(device=self.device)
+        except RuntimeError:
+            generator = torch.Generator()
+        generator.manual_seed(int(self.seed))
+        return generator
+
     def infer(self, payload: dict[str, Any]) -> dict[str, Any]:
         state = np.asarray(payload.get("state", []), dtype=np.float32)
         if state.shape[0] < 6:
             raise ValueError(f"Expected at least 6 state values, got shape {list(state.shape)}")
 
-        images = ordered_images(payload.get("images") or {})
-        if not images:
+        image_entries = ordered_image_entries(payload.get("images") or {})
+        if not image_entries:
             raise ValueError("MolmoAct2-SO100_101 requires at least one RGB image")
+        images = [image for _, image in image_entries]
 
         task = str(payload.get("task") or DEFAULT_TASK)
         policy_state = sim_state_to_policy_units(state)
         started_at = time.perf_counter()
 
-        autocast_enabled = self.device.type == "cuda" and self.dtype in (torch.bfloat16, torch.float16)
-        with torch.inference_mode(), torch.autocast("cuda", dtype=self.dtype, enabled=autocast_enabled):
-            out = self.model.predict_action(
-                processor=self.processor,
-                images=images,
-                task=task,
-                state=policy_state,
-                norm_tag=self.norm_tag,
-                inference_action_mode="continuous",
-                enable_depth_reasoning=False,
-                num_steps=self.num_steps,
-                normalize_language=True,
-                enable_cuda_graph=self.enable_cuda_graph,
-            )
+        with self._lock:
+            if bool(payload.get("reset")) or self._generator is None:
+                self._episode_index += 1
+                self._request_index = 0
+                self._generator = self._make_generator()
+            request_index = self._request_index
+            self._request_index += 1
+
+            autocast_enabled = self.device.type == "cuda" and self.dtype in (torch.bfloat16, torch.float16)
+            with torch.inference_mode(), torch.autocast("cuda", dtype=self.dtype, enabled=autocast_enabled):
+                out = self.model.predict_action(
+                    processor=self.processor,
+                    images=images,
+                    task=task,
+                    state=policy_state,
+                    norm_tag=self.norm_tag,
+                    inference_action_mode="continuous",
+                    enable_depth_reasoning=False,
+                    num_steps=self.num_steps,
+                    generator=self._generator,
+                    normalize_language=True,
+                    enable_cuda_graph=self.enable_cuda_graph,
+                )
 
         action_policy_chunk = as_numpy(out.actions).astype(np.float32)
         if action_policy_chunk.ndim == 3:
@@ -220,6 +316,8 @@ class MolmoAct2Runtime:
             "action": action_chunk[0].astype(float).tolist(),
             "actions": action_chunk.astype(float).tolist(),
             "action_policy_units": action_policy_chunk[0].astype(float).tolist(),
+            "image_keys": [key for key, _ in image_entries],
+            "image_count": len(image_entries),
             "action_names": [
                 "shoulder_pan.pos",
                 "shoulder_lift.pos",
@@ -229,10 +327,26 @@ class MolmoAct2Runtime:
                 "gripper.pos",
             ],
             "calibration": {
-                "state_units": "SO100/101 robot scale converted from sim radians",
-                "action_units": "SO100/101 robot scale converted to sim radians",
+                "state_units": "MuJoCo hinge radians mapped to SO100/101 calibrated motor features",
+                "action_units": "SO100/101 calibrated motor features mapped to MuJoCo ctrl radians",
+                "arm_sim_home_rad": SO101_SIM_HOME_RAD.astype(float).tolist(),
+                "arm_policy_home_deg": SO101_POLICY_HOME_DEG.astype(float).tolist(),
+                "sim_to_policy_sign": SO101_SIM_TO_POLICY_SIGN.astype(float).tolist(),
+                "sim_to_policy_offset_deg": SO101_SIM_TO_POLICY_OFFSET_DEG.astype(float).tolist(),
+                "sim_action_bias_rad": SO101_SIM_ACTION_BIAS_RAD.astype(float).tolist(),
+                "gripper_policy_state_range": [
+                    SO101_POLICY_GRIPPER_STATE_MIN,
+                    SO101_POLICY_GRIPPER_STATE_MAX,
+                ],
+                "gripper_policy_action_range": [
+                    SO101_POLICY_GRIPPER_ACTION_MIN,
+                    SO101_POLICY_GRIPPER_ACTION_MAX,
+                ],
                 "norm_tag": self.norm_tag,
                 "num_steps": self.num_steps,
+                "seed": self.seed,
+                "episode_index": self._episode_index,
+                "request_index": request_index,
                 "dtype": str(self.dtype).removeprefix("torch."),
                 "enable_cuda_graph": self.enable_cuda_graph,
             },
@@ -267,6 +381,7 @@ def make_handler(runtime: MolmoAct2Runtime):
                 },
                 "norm_tag": runtime.norm_tag,
                 "num_steps": runtime.num_steps,
+                "seed": runtime.seed,
                 "enable_cuda_graph": runtime.enable_cuda_graph,
             })
 
@@ -304,6 +419,7 @@ def main():
     parser.add_argument("--dtype", default=env_default("MOLMO_DTYPE", "bfloat16"))
     parser.add_argument("--norm-tag", default=env_default("MOLMO_NORM_TAG", DEFAULT_NORM_TAG))
     parser.add_argument("--num-steps", type=int, default=env_default_int("MOLMO_NUM_STEPS", 10))
+    parser.add_argument("--seed", type=int, default=env_default_int("MOLMO_SEED", DEFAULT_SEED))
     parser.add_argument(
         "--enable-cuda-graph",
         action=argparse.BooleanOptionalAction,
@@ -319,6 +435,7 @@ def main():
         dtype=dtype,
         norm_tag=args.norm_tag,
         num_steps=args.num_steps,
+        seed=args.seed,
         enable_cuda_graph=args.enable_cuda_graph,
     )
     server = ThreadingHTTPServer((args.host, args.port), make_handler(runtime))

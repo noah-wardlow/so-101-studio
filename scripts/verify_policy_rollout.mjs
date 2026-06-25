@@ -28,6 +28,7 @@ const minCubeLift = readNumberArg('min-cube-lift', 0);
 const minTargetContactCount = readNumberArg('min-target-contact-count', 0);
 const minGripperContactCount = readNumberArg('min-gripper-contact-count', 0);
 const minMovingJawContactCount = readNumberArg('min-moving-jaw-contact-count', 0);
+const minFinalCubeLift = readNumberArg('min-final-cube-lift', -Infinity);
 const sampleIntervalMs = readNumberArg('sample-interval-ms', 250);
 const objectBody = readArg('object-body', 'red_cube');
 const targetBody = readArg('target-body', 'green_target');
@@ -120,6 +121,26 @@ function summarizeTrajectory(samples, initialBodies, finalBodies, objectName) {
   const movingJawSamples = samples
     .map((sample) => ({ time: sample.time, position: sample.bodies?.moving_jaw_so101_v1 ?? null }))
     .filter((sample) => sample.position);
+  const closestGripperObject = samples.reduce((best, sample) => {
+    const object = sample.bodies?.[objectName] ?? null;
+    const gripper = sample.bodies?.gripper ?? null;
+    const distance = distance3(object, gripper);
+    if (distance === null) return best;
+    if (!best || distance < best.distance) {
+      return { time: sample.time, distance, object, gripper };
+    }
+    return best;
+  }, null);
+  const closestMovingJawObject = samples.reduce((best, sample) => {
+    const object = sample.bodies?.[objectName] ?? null;
+    const movingJaw = sample.bodies?.moving_jaw_so101_v1 ?? null;
+    const distance = distance3(object, movingJaw);
+    if (distance === null) return best;
+    if (!best || distance < best.distance) {
+      return { time: sample.time, distance, object, movingJaw };
+    }
+    return best;
+  }, null);
   const maxObjectZSample = objectSamples.reduce((best, sample) => (
     !best || sample.position[2] > best.position[2] ? sample : best
   ), null);
@@ -148,6 +169,8 @@ function summarizeTrajectory(samples, initialBodies, finalBodies, objectName) {
       maxZ: movingJawSamples.reduce((max, sample) => Math.max(max, sample.position[2]), -Infinity),
       minZ: movingJawSamples.reduce((min, sample) => Math.min(min, sample.position[2]), Infinity),
     },
+    closestGripperObject,
+    closestMovingJawObject,
   };
 }
 
@@ -287,6 +310,7 @@ try {
     const policy = globalThis.__lerobotPolicyDebug ?? [];
     const state = globalThis.__so101DebugState ?? null;
     const cameraFrames = globalThis.__lerobotCameraFrames ?? null;
+    const autoPause = globalThis.__so101AutoPause ?? null;
     const contactHistory = globalThis.__so101ContactHistory ?? [];
     const contactPairCounts = { ...(globalThis.__so101ContactPairCounts ?? {}) };
     for (const contact of contactHistory) {
@@ -308,6 +332,7 @@ try {
       requests: requests.length,
       responses: responses.length,
       errors: errors.map((entry) => entry.error),
+      autoPause,
       lastRequest: requests.at(-1) ?? null,
       lastResponse: responses.at(-1) ?? null,
       cameraSource: document.querySelector('[data-policy-camera]')?.textContent ?? null,
@@ -394,6 +419,13 @@ try {
       failures
     );
   }
+  if (Number.isFinite(minFinalCubeLift)) {
+    assert(
+      trajectory.object.finalLiftFromInitial !== null && trajectory.object.finalLiftFromInitial >= minFinalCubeLift,
+      `${objectBody} final lift ${trajectory.object.finalLiftFromInitial?.toFixed(4) ?? 'missing'} is below ${minFinalCubeLift}.`,
+      failures
+    );
+  }
   if (minTargetContactCount > 0) {
     assert(
       result.objectTargetContactCount >= minTargetContactCount,
@@ -447,6 +479,7 @@ try {
       minTargetContactCount,
       minGripperContactCount,
       minMovingJawContactCount,
+      minFinalCubeLift: Number.isFinite(minFinalCubeLift) ? minFinalCubeLift : null,
       sampleIntervalMs,
       objectBody,
       targetBody,

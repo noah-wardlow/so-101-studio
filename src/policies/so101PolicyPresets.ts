@@ -1,10 +1,15 @@
-import type { SceneObject, XmlPatch } from 'mujoco-react';
+import type { CreatePolicyCameraFrameCapturePlanOptions, SceneObject, XmlPatch } from 'mujoco-react';
 import type { PolicyQueueStrategy } from '../controllers/LeRobotPickPlacePolicy';
 
 export type So101PolicyStateMode = 'cube-to-target-12';
+export type So101PolicyPresetId = 'act12' | 'molmo';
+export type So101PolicyCameraPlan = Omit<
+  CreatePolicyCameraFrameCapturePlanOptions,
+  'cameras' | 'sites' | 'bodies'
+>;
 
 export interface So101PolicyPreset {
-  id: 'act12';
+  id: So101PolicyPresetId;
   label: string;
   sceneFile: string;
   modelId: string;
@@ -18,6 +23,7 @@ export interface So101PolicyPreset {
   queueStrategy: PolicyQueueStrategy;
   prefetchThreshold?: number;
   frequency: number;
+  policyCamera: So101PolicyCameraPlan;
   orbitTarget: [number, number, number];
   xmlPatches: XmlPatch[];
   redCubePosition: [number, number, number];
@@ -26,6 +32,9 @@ export interface So101PolicyPreset {
   tableSize: [number, number, number];
   greenTargetPosition: [number, number, number];
   redCubeRgba: [number, number, number, number];
+  redCubeMass?: number;
+  redCubeFriction?: string;
+  redCubeCondim?: number;
   greenTargetSize: [number, number, number];
   greenTargetRgba: [number, number, number, number];
 }
@@ -45,6 +54,15 @@ export const ACT_12D_HOME_JOINTS = [
   1.69,
   -1.629534,
   -0.058387,
+  -0.17453,
+];
+
+export const MOLMO_SO101_HOME_JOINTS = [
+  0.069314,
+  -1.685636,
+  0.810382,
+  1.600638,
+  -1.396152,
   -0.17453,
 ];
 
@@ -91,7 +109,127 @@ const ACT_12D_XML_PATCHES: XmlPatch[] = [
       '<geom name="moving_jaw_box3" class="collision_gripper" type="box" size="0.008 0.014 0.012"',
     ],
   },
+  {
+    target: 'SO101.xml',
+    replace: [
+      '<geom name="camera_box1" class="collision_gripper" type="box" size="0.015 0.015 0.003"',
+      '<geom name="camera_box1" class="collision_gripper" contype="0" conaffinity="0" type="box" size="0.015 0.015 0.003"',
+    ],
+  },
+  {
+    target: 'SO101.xml',
+    replace: [
+      '<geom name="camera_box2" class="collision_gripper" type="box" size="0.021 0.021 0.003"',
+      '<geom name="camera_box2" class="collision_gripper" contype="0" conaffinity="0" type="box" size="0.021 0.021 0.003"',
+    ],
+  },
 ];
+
+const CAPTURE_HIDDEN_GEOM_GROUPS = [3, 4] as const;
+const CAPTURE_HIDDEN_FLOOR_GEOMS = ['floor', 'floor_box_geom'] as const;
+
+export const ACT12_POLICY_CAMERA = {
+  position: [0.72, 0, 1.08],
+  lookAt: [0.4, 0, 0.43],
+  up: [0, 0, 1],
+  fov: 50,
+  width: 640,
+  height: 480,
+} as const;
+
+const ACT12_POLICY_CAMERA_PLAN: So101PolicyCameraPlan = {
+  cameraKeys: ['front'],
+  requireAll: true,
+  defaults: {
+    width: 640,
+    type: 'image/jpeg',
+    quality: 0.82,
+    hiddenGeomGroups: CAPTURE_HIDDEN_GEOM_GROUPS,
+    hiddenGeomNames: CAPTURE_HIDDEN_FLOOR_GEOMS,
+    background: '#6c6c6c',
+    renderIsolation: true,
+    visualOverrides: {
+      sceneEnvironment: null,
+      sceneFog: null,
+      shadows: false,
+    },
+    mujocoCameraCompatibility: {
+      useResolution: true,
+      useIntrinsics: true,
+      useClipping: true,
+      preserveAspect: true,
+    },
+    height: ACT12_POLICY_CAMERA.height,
+    fov: ACT12_POLICY_CAMERA.fov,
+  },
+  streamOptions: {
+    front: {
+      position: [...ACT12_POLICY_CAMERA.position],
+      lookAt: [...ACT12_POLICY_CAMERA.lookAt],
+      up: [...ACT12_POLICY_CAMERA.up],
+      fov: ACT12_POLICY_CAMERA.fov,
+    },
+  },
+};
+
+export const MOLMO_TOP_POLICY_CAMERA = {
+  position: [0.64, -0.46, 0.62],
+  lookAt: [0.33, 0.04, 0.48],
+  up: [0, 0, 1],
+  fov: 48,
+  width: 640,
+  height: 480,
+} as const;
+
+export const MOLMO_SIDE_POLICY_CAMERA = {
+  position: [0.38, -0.12, 0.86],
+  lookAt: [0.32, 0.04, 0.44],
+  up: [0, 0, 1],
+  fov: 42,
+  width: 640,
+  height: 480,
+} as const;
+
+const MOLMO_POLICY_CAMERA_PLAN: So101PolicyCameraPlan = {
+  cameraKeys: ['top', 'side'],
+  requireAll: true,
+  includeObservationImageAliases: false,
+  defaults: {
+    width: 640,
+    height: 480,
+    type: 'image/jpeg',
+    quality: 0.86,
+    hiddenGeomGroups: CAPTURE_HIDDEN_GEOM_GROUPS,
+    hiddenGeomNames: CAPTURE_HIDDEN_FLOOR_GEOMS,
+    background: '#d8ddd8',
+    renderIsolation: true,
+    visualOverrides: {
+      sceneEnvironment: null,
+      sceneFog: null,
+      shadows: false,
+    },
+    mujocoCameraCompatibility: {
+      useResolution: true,
+      useIntrinsics: true,
+      useClipping: true,
+      preserveAspect: true,
+    },
+  },
+  streamOptions: {
+    top: {
+      position: [...MOLMO_TOP_POLICY_CAMERA.position],
+      lookAt: [...MOLMO_TOP_POLICY_CAMERA.lookAt],
+      up: [...MOLMO_TOP_POLICY_CAMERA.up],
+      fov: MOLMO_TOP_POLICY_CAMERA.fov,
+    },
+    side: {
+      position: [...MOLMO_SIDE_POLICY_CAMERA.position],
+      lookAt: [...MOLMO_SIDE_POLICY_CAMERA.lookAt],
+      up: [...MOLMO_SIDE_POLICY_CAMERA.up],
+      fov: MOLMO_SIDE_POLICY_CAMERA.fov,
+    },
+  },
+};
 
 export const SO101_POLICY_PRESET: So101PolicyPreset = {
   id: 'act12',
@@ -107,6 +245,7 @@ export const SO101_POLICY_PRESET: So101PolicyPreset = {
   actionsPerRequest: 100,
   queueStrategy: 'append',
   frequency: 30,
+  policyCamera: ACT12_POLICY_CAMERA_PLAN,
   orbitTarget: [0.4, 0.02, 0.42],
   xmlPatches: ACT_12D_XML_PATCHES,
   redCubePosition: [0.4, 0.18, 0.432493],
@@ -118,6 +257,41 @@ export const SO101_POLICY_PRESET: So101PolicyPreset = {
   greenTargetSize: [0.09, 0.09, 0.004],
   greenTargetRgba: [0.45, 0.28, 0.05, 0.45],
 };
+
+export const MOLMO_SO101_POLICY_PRESET: So101PolicyPreset = {
+  id: 'molmo',
+  label: 'MolmoAct2 SO-100/101',
+  sceneFile: 'SO101.xml',
+  modelId: 'allenai/MolmoAct2-SO100_101',
+  sourceRepo: 'allenai/MolmoAct2-SO100_101',
+  inferenceUrl: 'https://vwz196x8czmhbn-8000.proxy.runpod.net/infer',
+  task: 'pick up the red cube',
+  robotType: 'so101',
+  homeJoints: MOLMO_SO101_HOME_JOINTS,
+  stateMode: 'cube-to-target-12',
+  actionsPerRequest: 45,
+  queueStrategy: 'replace',
+  prefetchThreshold: 1,
+  frequency: 30,
+  policyCamera: MOLMO_POLICY_CAMERA_PLAN,
+  orbitTarget: [0.32, 0.02, 0.45],
+  xmlPatches: ACT_12D_XML_PATCHES,
+  redCubePosition: [0.36, 0.06, 0.44],
+  redCubeSize: [0.02, 0.02, 0.02],
+  tablePosition: [0.4, 0, 0.02],
+  tableSize: [0.34, 0.42, 0.4],
+  greenTargetPosition: [0.4, -0.18, 0.42],
+  redCubeRgba: [0.9, 0.12, 0.08, 1],
+  redCubeMass: 0.006,
+  redCubeFriction: '4 0.8 0.08',
+  redCubeCondim: 6,
+  greenTargetSize: [0.09, 0.09, 0.004],
+  greenTargetRgba: [0.45, 0.28, 0.05, 0.45],
+};
+
+export function selectSo101PolicyPreset(value: string | null | undefined): So101PolicyPreset {
+  return value === 'act12' ? SO101_POLICY_PRESET : MOLMO_SO101_POLICY_PRESET;
+}
 
 export function createSo101SceneObjects(
   preset: So101PolicyPreset,
@@ -143,12 +317,12 @@ export function createSo101SceneObjects(
       size: redCubeSize,
       position: redCubePosition,
       rgba: preset.redCubeRgba,
-      mass: options.redCubeMass ?? 0.01,
+      mass: options.redCubeMass ?? preset.redCubeMass ?? 0.01,
       freejoint: true,
-      friction: options.redCubeFriction ?? '1 0.05 0.001',
+      friction: options.redCubeFriction ?? preset.redCubeFriction ?? '1 0.05 0.001',
       solref: options.redCubeSolref ?? '0.01 1',
       solimp: options.redCubeSolimp ?? '0.95 0.99 0.001 0.5 2',
-      condim: options.redCubeCondim ?? 4,
+      condim: options.redCubeCondim ?? preset.redCubeCondim ?? 4,
     },
     {
       name: 'green_target',
