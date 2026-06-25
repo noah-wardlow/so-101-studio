@@ -591,35 +591,17 @@ function SceneChildren({
   stateMode: So101PolicyStateMode;
   onPolicyTelemetry: (telemetry: PolicyTelemetry) => void;
 }) {
-  const sim = useMujoco();
-  const [policyReady, setPolicyReady] = useState(false);
-
-  useEffect(() => {
-    if (!policyRunning) {
-      setPolicyReady(false);
-      return undefined;
-    }
-    setPolicyReady(false);
-    sim.api?.reset();
-    const timeout = window.setTimeout(() => {
-      setPolicyReady(true);
-    }, 100);
-    return () => window.clearTimeout(timeout);
-  }, [policyRunning, sim.api]);
-
-  const policyActive = policyRunning && policyReady;
-
   return (
     <>
       <SceneProbe />
-      <SetupDebugBridge policyRunning={policyActive} />
+      <SetupDebugBridge policyRunning={policyRunning} />
       <Debug
         showCameras={showMujocoCameraDebug}
         virtualCameras={showPolicyCameraDebug ? policyDebugCameras : []}
       />
-      {policyActive ? (
+      {policyRunning ? (
         <LeRobotPolicyRunner
-          enabled={policyActive}
+          enabled={policyRunning}
           executionMode="raw-act"
           inferenceUrl={inferenceUrl}
           actionsPerRequest={actionsPerRequest}
