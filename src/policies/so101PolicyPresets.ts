@@ -109,6 +109,9 @@ const ACT_12D_XML_PATCHES: XmlPatch[] = [
       '<geom name="moving_jaw_box3" class="collision_gripper" type="box" size="0.008 0.014 0.012"',
     ],
   },
+];
+
+const CAMERA_BOX_NONCONTACT_XML_PATCHES: XmlPatch[] = [
   {
     target: 'SO101.xml',
     replace: [
@@ -127,6 +130,10 @@ const ACT_12D_XML_PATCHES: XmlPatch[] = [
 
 const CAPTURE_HIDDEN_GEOM_GROUPS = [3, 4] as const;
 const CAPTURE_HIDDEN_FLOOR_GEOMS = [
+  'floor',
+  'floor_box_geom',
+] as const;
+const CAPTURE_HIDDEN_FLOOR_AND_BIN_GEOMS = [
   'floor',
   'floor_box_geom',
   'target_bin_left_wall_geom',
@@ -207,7 +214,7 @@ const MOLMO_POLICY_CAMERA_PLAN: So101PolicyCameraPlan = {
     type: 'image/jpeg',
     quality: 0.86,
     hiddenGeomGroups: CAPTURE_HIDDEN_GEOM_GROUPS,
-    hiddenGeomNames: CAPTURE_HIDDEN_FLOOR_GEOMS,
+    hiddenGeomNames: CAPTURE_HIDDEN_FLOOR_AND_BIN_GEOMS,
     background: '#d8ddd8',
     renderIsolation: true,
     visualOverrides: {
@@ -282,7 +289,7 @@ export const MOLMO_SO101_POLICY_PRESET: So101PolicyPreset = {
   frequency: 30,
   policyCamera: MOLMO_POLICY_CAMERA_PLAN,
   orbitTarget: [0.32, 0.02, 0.45],
-  xmlPatches: ACT_12D_XML_PATCHES,
+  xmlPatches: [...ACT_12D_XML_PATCHES, ...CAMERA_BOX_NONCONTACT_XML_PATCHES],
   redCubePosition: [0.36, 0.06, 0.44],
   redCubeSize: [0.02, 0.02, 0.02],
   tablePosition: [0.4, 0, 0.02],

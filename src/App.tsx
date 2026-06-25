@@ -195,6 +195,7 @@ const policyAutoPauseOnLift = booleanSearchParam('autoPause', policyPreset.id ==
 const policyAutoPauseLiftThreshold = numericSearchParam('autoPauseLift', policyPreset.id === 'molmo' ? 0.09 : 0.075);
 const policyAutoPauseStableTicks = numericSearchParam('autoPauseTicks', policyPreset.id === 'molmo' ? 5 : 3);
 const showBinInPolicyAfterLift = booleanSearchParam('showBinInPolicyAfterLift', true);
+const resetSceneBeforePolicy = booleanSearchParam('resetScene', policyPreset.id !== 'act12');
 
 function vectorSearchParam(
   name: string,
@@ -1075,7 +1076,9 @@ function So101Studio() {
       return;
     }
 
-    resetSceneForPolicy();
+    if (resetSceneBeforePolicy) {
+      resetSceneForPolicy();
+    }
     setPolicyRunning(false);
     if (startTimerRef.current !== null) window.clearTimeout(startTimerRef.current);
     startTimerRef.current = window.setTimeout(() => {
@@ -1181,7 +1184,7 @@ function So101Studio() {
         }}
         dpr={[1, 2]}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
-        renderOptions={{ meshNormalSmoothing: true }}
+        renderOptions={policyRunning ? undefined : { meshNormalSmoothing: true }}
         style={{ width: '100%', height: '100%' }}
       >
         <color attach="background" args={['#d8ddd8']} />
