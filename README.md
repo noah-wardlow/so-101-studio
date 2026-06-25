@@ -10,7 +10,7 @@ The default scene opens the MolmoAct2 SO-100/101 route:
 - browser app: `http://127.0.0.1:3001/`
 
 MolmoAct2 is the default interactive route. The default Molmo scene uses a
-nearby red target pad, hides that target from policy captures until the cube is
+nearby green target pad, hides that target from policy captures until the cube is
 lifted, then switches the task prompt from pickup to placement. Physical bin
 walls are off by default for Molmo because they block the gripper near the
 working target location. A small gripper action calibration bias is applied for
@@ -93,7 +93,7 @@ node scripts/verify_policy_rollout.mjs \
   --actions-per-request=45 \
   --min-responses=4 \
   --max-target-distance=0.10 \
-  --min-cube-lift=0.04 \
+  --min-cube-lift=0.06 \
   --min-final-cube-lift=-0.01 \
   --min-target-contact-count=1 \
   --min-gripper-contact-count=80 \
@@ -175,8 +175,8 @@ Scene and physics tuning:
 - `binWalls=false`
 - `hideGoalInPolicyUntilLift=false`
 - `gripperActionBias=-0.35`
-- `taskAfterLiftLift=0.04`
-- `autoPauseTicks=1`
+- `taskAfterLiftLift=0.06`
+- `autoPauseTicks=5`
 
 Policy scheduling:
 

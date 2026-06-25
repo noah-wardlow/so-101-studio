@@ -185,16 +185,16 @@ const policyQueueStrategy = policyQueueStrategySearchParam(policyPreset.queueStr
 const policyPrefetchThreshold = optionalNumericSearchParam('prefetch') ?? policyPreset.prefetchThreshold;
 const policyTask = searchParams.get('task') ?? policyPreset.task;
 const taskAfterLiftParam = searchParams.get('taskAfterLift');
-const defaultMolmoTaskAfterLift = 'put the red cube onto the red target';
+const defaultMolmoTaskAfterLift = 'put the red cube onto the green target';
 const policyTaskAfterLift = taskAfterLiftParam === null
   ? policyPreset.id === 'molmo' ? defaultMolmoTaskAfterLift : ''
   : ['', '0', 'false', 'off', 'no'].includes(taskAfterLiftParam.toLowerCase())
     ? ''
     : taskAfterLiftParam;
-const policyTaskAfterLiftThreshold = numericSearchParam('taskAfterLiftLift', policyPreset.id === 'molmo' ? 0.04 : 0.075);
+const policyTaskAfterLiftThreshold = numericSearchParam('taskAfterLiftLift', policyPreset.id === 'molmo' ? 0.06 : 0.075);
 const policyAutoPauseOnLift = booleanSearchParam('autoPause', false);
 const policyAutoPauseLiftThreshold = numericSearchParam('autoPauseLift', policyPreset.id === 'molmo' ? 0.09 : 0.075);
-const policyAutoPauseStableTicks = numericSearchParam('autoPauseTicks', policyPreset.id === 'molmo' ? 1 : 3);
+const policyAutoPauseStableTicks = numericSearchParam('autoPauseTicks', policyPreset.id === 'molmo' ? 5 : 3);
 const showBinInPolicyAfterLift = booleanSearchParam('showBinInPolicyAfterLift', true);
 const hideGoalInPolicyUntilLift = booleanSearchParam('hideGoalInPolicyUntilLift', policyPreset.id === 'molmo');
 const resetSceneBeforePolicy = booleanSearchParam('resetScene', policyPreset.id !== 'act12');
