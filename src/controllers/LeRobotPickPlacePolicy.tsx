@@ -133,6 +133,7 @@ interface UseLeRobotRemotePolicyOptions {
   stateMode?: LeRobotStateMode;
   cameraPlan?: LeRobotCameraPlanOptions;
   resetOnTaskChange?: boolean;
+  clearQueueOnTaskChange?: boolean;
   onTelemetry?: (telemetry: PolicyTelemetry) => void;
 }
 
@@ -348,6 +349,7 @@ export function useLeRobotRemotePolicy({
   stateMode = 'cube-to-target-12',
   cameraPlan,
   resetOnTaskChange = true,
+  clearQueueOnTaskChange = false,
   onTelemetry,
 }: UseLeRobotRemotePolicyOptions) {
   const mujoco = useMujoco();
@@ -584,6 +586,21 @@ export function useLeRobotRemotePolicy({
     if (enabled) policy.start();
     else policy.stop();
   }, [enabled, policy]);
+
+  useEffect(() => {
+    if (!enabled || resetOnTaskChange || !clearQueueOnTaskChange) return;
+    policy.abort(new Error('Policy task changed.'));
+    policy.clearQueue();
+    lastTimingRef.current = {};
+    cameraSourceRef.current = 'waiting for scene cameras';
+  }, [
+    policy,
+    enabled,
+    resetOnTaskChange,
+    clearQueueOnTaskChange,
+    task,
+    cameraPlanOptions,
+  ]);
 
   useEffect(() => {
     policy.reset();

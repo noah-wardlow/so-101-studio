@@ -63,6 +63,7 @@ import {
   FieldTitle,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 
@@ -184,14 +185,14 @@ const policyQueueStrategy = policyQueueStrategySearchParam(policyPreset.queueStr
 const policyPrefetchThreshold = optionalNumericSearchParam('prefetch') ?? policyPreset.prefetchThreshold;
 const policyTask = searchParams.get('task') ?? policyPreset.task;
 const taskAfterLiftParam = searchParams.get('taskAfterLift');
-const defaultMolmoTaskAfterLift = 'put the red cube on the target';
+const defaultMolmoTaskAfterLift = 'put the red cube into the target bin';
 const policyTaskAfterLift = taskAfterLiftParam === null
   ? policyPreset.id === 'molmo' ? defaultMolmoTaskAfterLift : ''
   : ['', '0', 'false', 'off', 'no'].includes(taskAfterLiftParam.toLowerCase())
     ? ''
     : taskAfterLiftParam;
-const policyTaskAfterLiftThreshold = numericSearchParam('taskAfterLiftLift', policyPreset.id === 'molmo' ? 0.08 : 0.075);
-const policyAutoPauseOnLift = booleanSearchParam('autoPause', policyPreset.id === 'molmo' && !policyTaskAfterLift);
+const policyTaskAfterLiftThreshold = numericSearchParam('taskAfterLiftLift', policyPreset.id === 'molmo' ? 0.06 : 0.075);
+const policyAutoPauseOnLift = booleanSearchParam('autoPause', false);
 const policyAutoPauseLiftThreshold = numericSearchParam('autoPauseLift', policyPreset.id === 'molmo' ? 0.09 : 0.075);
 const policyAutoPauseStableTicks = numericSearchParam('autoPauseTicks', policyPreset.id === 'molmo' ? 5 : 3);
 const showBinInPolicyAfterLift = booleanSearchParam('showBinInPolicyAfterLift', true);
@@ -680,6 +681,7 @@ function SceneChildren({
   stateMode,
   cameraPlan,
   resetOnTaskChange,
+  clearQueueOnTaskChange,
   onPolicyTelemetry,
 }: {
   policyRunning: boolean;
@@ -696,6 +698,7 @@ function SceneChildren({
   stateMode: So101PolicyStateMode;
   cameraPlan: So101PolicyCameraPlan;
   resetOnTaskChange: boolean;
+  clearQueueOnTaskChange: boolean;
   onPolicyTelemetry: (telemetry: PolicyTelemetry) => void;
 }) {
   return (
@@ -721,6 +724,7 @@ function SceneChildren({
           stateMode={stateMode}
           cameraPlan={cameraPlan}
           resetOnTaskChange={resetOnTaskChange}
+          clearQueueOnTaskChange={clearQueueOnTaskChange}
           onTelemetry={onPolicyTelemetry}
         />
       ) : null}
@@ -843,6 +847,7 @@ function PolicyDetailSection({
 
 function PolicyHud({
   policyRunning,
+  onPolicyChange,
   autoPauseOnLift,
   activeTask,
   taskAfterLift,
@@ -859,6 +864,7 @@ function PolicyHud({
   onToggleRun,
 }: {
   policyRunning: boolean;
+  onPolicyChange: (value: string) => void;
   autoPauseOnLift: boolean;
   activeTask: string;
   taskAfterLift: string;
@@ -902,6 +908,22 @@ function PolicyHud({
         </div>
 
         <FieldGroup className="gap-3">
+          <FieldLabel className="policy-field pointer-events-auto">
+            <Field className="gap-1.5">
+              <FieldTitle>Policy preset</FieldTitle>
+              <NativeSelect
+                aria-label="Policy preset"
+                className="w-full"
+                disabled={policyRunning}
+                onChange={(event) => onPolicyChange(event.target.value)}
+                value={policyPreset.id}
+              >
+                <NativeSelectOption value="molmo">MolmoAct2 SO-100/101</NativeSelectOption>
+                <NativeSelectOption value="act12">ACT 12D sim pick-place</NativeSelectOption>
+              </NativeSelect>
+            </Field>
+          </FieldLabel>
+
           <FieldLabel className="policy-field pointer-events-auto">
             <Field className="gap-1.5">
               <FieldTitle>Inference URL</FieldTitle>
@@ -1027,12 +1049,25 @@ function So101Studio() {
     updatePolicyHud(telemetry);
   }, []);
 
+  const changePolicyPreset = useCallback((value: string) => {
+    const url = new URL(window.location.href);
+    if (value === 'molmo') {
+      url.searchParams.delete('policy');
+      url.searchParams.delete('preset');
+    } else {
+      url.searchParams.set('policy', value);
+      url.searchParams.delete('preset');
+    }
+    window.location.assign(url.toString());
+  }, []);
+
   const activePolicyCameraPlan = useMemo(() => (
     policyTaskAfterLift && showBinInPolicyAfterLift && activePolicyTask === policyTaskAfterLift
       ? revealBinInPolicyCameraPlan(policyPreset.policyCamera)
       : policyPreset.policyCamera
   ), [activePolicyTask]);
   const resetPolicyOnTaskChange = !(policyPreset.id === 'molmo' && policyTaskAfterLift);
+  const clearQueueOnTaskChange = policyPreset.id === 'molmo' && !!policyTaskAfterLift;
 
   const resetSceneForPolicy = useCallback(() => {
     const debugGlobal = globalThis as typeof globalThis & CameraDebugGlobal;
@@ -1210,6 +1245,7 @@ function So101Studio() {
           stateMode={policyPreset.stateMode}
           cameraPlan={activePolicyCameraPlan}
           resetOnTaskChange={resetPolicyOnTaskChange}
+          clearQueueOnTaskChange={clearQueueOnTaskChange}
           onPolicyTelemetry={onPolicyTelemetry}
         />
         <ScenarioLighting preset="studio" intensity={1.55} />
@@ -1217,6 +1253,7 @@ function So101Studio() {
       <JointStateHud policyRunning={policyRunning} />
       <PolicyHud
         policyRunning={policyRunning}
+        onPolicyChange={changePolicyPreset}
         autoPauseOnLift={policyAutoPauseOnLift}
         activeTask={activePolicyTask}
         taskAfterLift={policyTaskAfterLift}

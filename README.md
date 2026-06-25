@@ -1,14 +1,23 @@
 # SO-101 Studio
 
-Browser SO-101 MuJoCo policy demo built with React, `mujoco-react`, and a
-LeRobot ACT policy server.
+Browser SO-101 MuJoCo policy demo built with React, `mujoco-react`, LeRobot ACT,
+and MolmoAct2 policy backends.
 
-The default scene runs the verified ACT 12D sim pick-place rollout:
+The default scene opens the MolmoAct2 SO-100/101 route:
+
+- model: `allenai/MolmoAct2-SO100_101`
+- policy endpoint: configure the MolmoAct2 inference URL in the UI
+- browser app: `http://127.0.0.1:3001/`
+
+MolmoAct2 is the default interactive route and is still being tuned for
+placement. The ACT 12D route below remains the verified pick-place reference.
+
+The ACT 12D route remains the verified pick-place reference:
 
 - model: `davidlinjiahao/lerobot_so101_base_sim_pickplace`
 - dataset/stats: `davidlinjiahao/lerobot_batch_001`
 - policy endpoint: `http://127.0.0.1:8776/infer`
-- browser app: `http://127.0.0.1:3001/`
+- browser app: `http://127.0.0.1:3001/?policy=act12`
 
 Policy mode is intentionally pure: the remote policy is the only control writer.
 There is no IK assist, scripted grasp, or object teleport path during rollout.
@@ -44,7 +53,8 @@ Start the policy server in another terminal:
 npm run policy
 ```
 
-Open `http://127.0.0.1:3001/`, then press `Run policy`.
+Open `http://127.0.0.1:3001/`, choose a policy preset if needed, then press
+`Run policy`.
 
 The policy server uses `uv` and the `policy` dependency group in
 `pyproject.toml`. To use a LeRobot checkout while developing the backend:
