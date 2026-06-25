@@ -53,6 +53,7 @@ export type PolicyQueueStrategy = NonNullable<RemotePolicyConfig['queueStrategy'
 
 export interface PolicyTelemetry {
   sourceRepo: string;
+  task: string;
   observationSize: number;
   state: number[];
   ctrl: number[];
@@ -72,6 +73,11 @@ export interface PolicyTelemetry {
   requestMs?: number;
   queueStrategy?: PolicyQueueStrategy;
   prefetchThreshold?: number;
+  remoteStatus?: string;
+  requestCount?: number;
+  responseCount?: number;
+  queuedActions?: number;
+  inFlight?: boolean;
 }
 
 interface LeRobotPolicyResponse {
@@ -537,6 +543,7 @@ export function useLeRobotRemotePolicy({
       if (data.time - lastTelemetryTimeRef.current > 0.18) {
         onTelemetry?.({
           sourceRepo: serverStatusRef.current,
+          task,
           observationSize: policyObservation.length,
           state,
           ctrl,
@@ -548,6 +555,11 @@ export function useLeRobotRemotePolicy({
           cameraSource: cameraSourceRef.current,
           queueStrategy,
           prefetchThreshold: resolvedPrefetchThreshold,
+          remoteStatus: policy.remoteStatus,
+          requestCount: policy.requestCount,
+          responseCount: policy.responseCount,
+          queuedActions: policy.queuedActions,
+          inFlight: policy.inFlight,
           ...lastResponseMetaRef.current,
           ...lastTimingRef.current,
         });

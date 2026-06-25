@@ -311,6 +311,7 @@ try {
     const state = globalThis.__so101DebugState ?? null;
     const cameraFrames = globalThis.__lerobotCameraFrames ?? null;
     const autoPause = globalThis.__so101AutoPause ?? null;
+    const taskPhase = globalThis.__so101TaskPhase ?? null;
     const contactHistory = globalThis.__so101ContactHistory ?? [];
     const contactPairCounts = { ...(globalThis.__so101ContactPairCounts ?? {}) };
     for (const contact of contactHistory) {
@@ -333,6 +334,7 @@ try {
       responses: responses.length,
       errors: errors.map((entry) => entry.error),
       autoPause,
+      taskPhase,
       lastRequest: requests.at(-1) ?? null,
       lastResponse: responses.at(-1) ?? null,
       cameraSource: document.querySelector('[data-policy-camera]')?.textContent ?? null,

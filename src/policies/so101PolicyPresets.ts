@@ -126,7 +126,14 @@ const ACT_12D_XML_PATCHES: XmlPatch[] = [
 ];
 
 const CAPTURE_HIDDEN_GEOM_GROUPS = [3, 4] as const;
-const CAPTURE_HIDDEN_FLOOR_GEOMS = ['floor', 'floor_box_geom'] as const;
+const CAPTURE_HIDDEN_FLOOR_GEOMS = [
+  'floor',
+  'floor_box_geom',
+  'target_bin_left_wall_geom',
+  'target_bin_right_wall_geom',
+  'target_bin_front_wall_geom',
+  'target_bin_back_wall_geom',
+] as const;
 
 export const ACT12_POLICY_CAMERA = {
   position: [0.72, 0, 1.08],
@@ -297,6 +304,7 @@ export function createSo101SceneObjects(
   preset: So101PolicyPreset,
   redCubePosition: [number, number, number],
   redCubeSize: [number, number, number],
+  greenTargetPosition = preset.greenTargetPosition,
   options: So101SceneObjectOptions = {},
 ): SceneObject[] {
   const objects: SceneObject[] = [
@@ -328,7 +336,7 @@ export function createSo101SceneObjects(
       name: 'green_target',
       type: 'box',
       size: preset.greenTargetSize,
-      position: preset.greenTargetPosition,
+      position: greenTargetPosition,
       rgba: preset.greenTargetRgba,
       friction: '2 0.3 0.1',
       solref: '0.01 1',
@@ -346,9 +354,9 @@ export function createSo101SceneObjects(
       type: 'box',
       size: [0.006, 0.09, 0.045],
       position: [
-        preset.greenTargetPosition[0] - 0.09,
-        preset.greenTargetPosition[1],
-        preset.greenTargetPosition[2] + 0.045,
+        greenTargetPosition[0] - 0.09,
+        greenTargetPosition[1],
+        greenTargetPosition[2] + 0.045,
       ],
       rgba: [preset.greenTargetRgba[0], preset.greenTargetRgba[1], preset.greenTargetRgba[2], 0.5],
       friction: '2 0.3 0.1',
@@ -361,9 +369,9 @@ export function createSo101SceneObjects(
       type: 'box',
       size: [0.006, 0.09, 0.045],
       position: [
-        preset.greenTargetPosition[0] + 0.09,
-        preset.greenTargetPosition[1],
-        preset.greenTargetPosition[2] + 0.045,
+        greenTargetPosition[0] + 0.09,
+        greenTargetPosition[1],
+        greenTargetPosition[2] + 0.045,
       ],
       rgba: [preset.greenTargetRgba[0], preset.greenTargetRgba[1], preset.greenTargetRgba[2], 0.5],
       friction: '2 0.3 0.1',
@@ -376,9 +384,9 @@ export function createSo101SceneObjects(
       type: 'box',
       size: [0.09, 0.006, 0.045],
       position: [
-        preset.greenTargetPosition[0],
-        preset.greenTargetPosition[1] - 0.09,
-        preset.greenTargetPosition[2] + 0.045,
+        greenTargetPosition[0],
+        greenTargetPosition[1] - 0.09,
+        greenTargetPosition[2] + 0.045,
       ],
       rgba: [preset.greenTargetRgba[0], preset.greenTargetRgba[1], preset.greenTargetRgba[2], 0.5],
       friction: '2 0.3 0.1',
@@ -391,9 +399,9 @@ export function createSo101SceneObjects(
       type: 'box',
       size: [0.09, 0.006, 0.045],
       position: [
-        preset.greenTargetPosition[0],
-        preset.greenTargetPosition[1] + 0.09,
-        preset.greenTargetPosition[2] + 0.045,
+        greenTargetPosition[0],
+        greenTargetPosition[1] + 0.09,
+        greenTargetPosition[2] + 0.045,
       ],
       rgba: [preset.greenTargetRgba[0], preset.greenTargetRgba[1], preset.greenTargetRgba[2], 0.5],
       friction: '2 0.3 0.1',

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Html, OrbitControls } from '@react-three/drei';
 import {
@@ -134,6 +134,14 @@ interface CameraDebugGlobal {
     gripperContacts: number;
     movingJawContacts: number;
   };
+  __so101TaskPhase?: {
+    initialTask: string;
+    activeTask: string;
+    taskAfterLift: string | null;
+    switched: boolean;
+    lift: number;
+    time: number;
+  };
 }
 
 interface HudElements {
@@ -175,9 +183,18 @@ const homeJoints = policyPreset.homeJoints;
 const policyQueueStrategy = policyQueueStrategySearchParam(policyPreset.queueStrategy ?? 'replace');
 const policyPrefetchThreshold = optionalNumericSearchParam('prefetch') ?? policyPreset.prefetchThreshold;
 const policyTask = searchParams.get('task') ?? policyPreset.task;
-const policyAutoPauseOnLift = booleanSearchParam('autoPause', policyPreset.id === 'molmo');
+const taskAfterLiftParam = searchParams.get('taskAfterLift');
+const defaultMolmoTaskAfterLift = 'put the red cube on the target';
+const policyTaskAfterLift = taskAfterLiftParam === null
+  ? policyPreset.id === 'molmo' ? defaultMolmoTaskAfterLift : ''
+  : ['', '0', 'false', 'off', 'no'].includes(taskAfterLiftParam.toLowerCase())
+    ? ''
+    : taskAfterLiftParam;
+const policyTaskAfterLiftThreshold = numericSearchParam('taskAfterLiftLift', policyPreset.id === 'molmo' ? 0.08 : 0.075);
+const policyAutoPauseOnLift = booleanSearchParam('autoPause', policyPreset.id === 'molmo' && !policyTaskAfterLift);
 const policyAutoPauseLiftThreshold = numericSearchParam('autoPauseLift', policyPreset.id === 'molmo' ? 0.09 : 0.075);
 const policyAutoPauseStableTicks = numericSearchParam('autoPauseTicks', policyPreset.id === 'molmo' ? 5 : 3);
+const showBinInPolicyAfterLift = booleanSearchParam('showBinInPolicyAfterLift', true);
 
 function vectorSearchParam(
   name: string,
@@ -232,6 +249,27 @@ function createPolicyDebugCameras(cameraPlan: So101PolicyCameraPlan): DebugVirtu
 }
 
 const policyDebugCameras = createPolicyDebugCameras(policyPreset.policyCamera);
+const targetBinGeomNames = new Set([
+  'target_bin_left_wall_geom',
+  'target_bin_right_wall_geom',
+  'target_bin_front_wall_geom',
+  'target_bin_back_wall_geom',
+]);
+
+function revealBinInPolicyCameraPlan(cameraPlan: So101PolicyCameraPlan): So101PolicyCameraPlan {
+  const hiddenGeomNames = cameraPlan.defaults?.hiddenGeomNames?.filter((name) => (
+    !targetBinGeomNames.has(name)
+  ));
+  return {
+    ...cameraPlan,
+    defaults: cameraPlan.defaults
+      ? {
+        ...cameraPlan.defaults,
+        hiddenGeomNames,
+      }
+      : undefined,
+  };
+}
 
 const redCubePosition = [
   numericSearchParam('targetX', policyPreset.redCubePosition[0]),
@@ -245,19 +283,25 @@ const redCubeSize = [
   numericSearchParam('targetSZ', policyPreset.redCubeSize[2]),
 ] as [number, number, number];
 
+const greenTargetPosition = [
+  numericSearchParam('goalX', policyPreset.greenTargetPosition[0]),
+  numericSearchParam('goalY', policyPreset.greenTargetPosition[1]),
+  numericSearchParam('goalZ', policyPreset.greenTargetPosition[2]),
+] as [number, number, number];
+
 const redCubeFriction = searchParams.get('cubeFriction') ?? undefined;
 const redCubeSolref = searchParams.get('cubeSolref') ?? undefined;
 const redCubeSolimp = searchParams.get('cubeSolimp') ?? undefined;
 const includeAct12BinWalls = searchParams.has('binWalls')
   ? searchParams.get('binWalls') !== 'false'
-  : policyPreset.id === 'act12';
+  : true;
 
 const sceneConfig: SceneConfig = {
   src: '/models/so101/',
   sceneFile,
   homeJoints,
   xmlPatches: policyPreset.xmlPatches,
-  sceneObjects: createSo101SceneObjects(policyPreset, redCubePosition, redCubeSize, {
+  sceneObjects: createSo101SceneObjects(policyPreset, redCubePosition, redCubeSize, greenTargetPosition, {
     redCubeMass: optionalNumericSearchParam('cubeMass'),
     redCubeFriction,
     redCubeSolref,
@@ -334,8 +378,13 @@ function updatePolicyHud(telemetry: PolicyTelemetry) {
   const actionGripper = telemetry.action[5] ?? 0;
 
   setHudText('[data-policy-source]', `Action source: ${telemetry.actionSource}`);
+  setHudText('[data-policy-task]', `Task: ${telemetry.task}`);
   setHudText('[data-policy-execution]', `Execution: ${telemetry.executionMode}`);
   setHudText('[data-policy-model]', `Model: ${telemetry.sourceRepo}`);
+  setHudText(
+    '[data-policy-remote]',
+    `Remote: ${telemetry.remoteStatus ?? '-'} | req ${telemetry.requestCount ?? 0} / resp ${telemetry.responseCount ?? 0} | queue ${telemetry.queuedActions ?? 0}${telemetry.inFlight ? ' | in flight' : ''}`,
+  );
   setHudText(
     '[data-policy-space]',
     `Policy space: ${telemetry.policySpace ?? '-'} | state dim ${telemetry.stateDim ?? telemetry.observationSize}`,
@@ -791,6 +840,8 @@ function PolicyDetailSection({
 function PolicyHud({
   policyRunning,
   autoPauseOnLift,
+  activeTask,
+  taskAfterLift,
   showPolicyCameraDebug,
   setShowPolicyCameraDebug,
   showMujocoCameraDebug,
@@ -805,6 +856,8 @@ function PolicyHud({
 }: {
   policyRunning: boolean;
   autoPauseOnLift: boolean;
+  activeTask: string;
+  taskAfterLift: string;
   showPolicyCameraDebug: boolean;
   setShowPolicyCameraDebug: (value: boolean) => void;
   showMujocoCameraDebug: boolean;
@@ -837,6 +890,10 @@ function PolicyHud({
           <span data-policy-source>Action source: paused</span>
           <span data-policy-camera>Cameras: waiting</span>
           <span data-policy-timing>Timing: waiting</span>
+          <span data-policy-task>Task: {activeTask}</span>
+          <span data-policy-remote>Remote: idle | req 0 / resp 0 | queue 0</span>
+          <span data-policy-task-after-lift>After lift: {taskAfterLift || 'none'}</span>
+          <span data-policy-bin-camera>Policy bin camera: {showBinInPolicyAfterLift ? 'visible after lift' : 'hidden'}</span>
           <span data-policy-autopause>Auto-pause: {autoPauseOnLift ? `on lift >= ${policyAutoPauseLiftThreshold.toFixed(3)} m` : 'off'}</span>
         </div>
 
@@ -957,6 +1014,7 @@ function So101Studio() {
   const [showMujocoCameraDebug, setShowMujocoCameraDebug] = useState(false);
   const [inferenceUrl, setInferenceUrl] = useState(policyPreset.inferenceUrl);
   const [actionsPerRequest, setActionsPerRequest] = useState(policyPreset.actionsPerRequest);
+  const [activePolicyTask, setActivePolicyTask] = useState(policyTask);
   const startTimerRef = useRef<number | null>(null);
   const autoPauseInitialCubeZRef = useRef<number | null>(null);
   const autoPauseStableTicksRef = useRef(0);
@@ -965,11 +1023,18 @@ function So101Studio() {
     updatePolicyHud(telemetry);
   }, []);
 
+  const activePolicyCameraPlan = useMemo(() => (
+    policyTaskAfterLift && showBinInPolicyAfterLift && activePolicyTask === policyTaskAfterLift
+      ? revealBinInPolicyCameraPlan(policyPreset.policyCamera)
+      : policyPreset.policyCamera
+  ), [activePolicyTask]);
+
   const resetSceneForPolicy = useCallback(() => {
     const debugGlobal = globalThis as typeof globalThis & CameraDebugGlobal;
     autoPauseInitialCubeZRef.current = null;
     autoPauseStableTicksRef.current = 0;
     setHeldPolicyCtrl(null);
+    setActivePolicyTask(policyTask);
     debugGlobal.__so101AutoPause = {
       armed: policyAutoPauseOnLift,
       triggered: false,
@@ -981,7 +1046,17 @@ function So101Studio() {
       gripperContacts: 0,
       movingJawContacts: 0,
     };
+    debugGlobal.__so101TaskPhase = {
+      initialTask: policyTask,
+      activeTask: policyTask,
+      taskAfterLift: policyTaskAfterLift || null,
+      switched: false,
+      lift: 0,
+      time: 0,
+    };
     setHudText('[data-policy-autopause]', `Auto-pause: ${policyAutoPauseOnLift ? 'armed' : 'off'}`);
+    setHudText('[data-policy-task]', `Task: ${policyTask}`);
+    setHudText('[data-policy-remote]', 'Remote: idle | req 0 / resp 0 | queue 0');
     debugGlobal.__so101SetRobotState?.(homeJoints, homeJoints);
     debugGlobal.__so101SetObjectPose?.('red_cube', redCubePosition);
   }, []);
@@ -1012,7 +1087,7 @@ function So101Studio() {
   }, []);
 
   useEffect(() => {
-    if (!policyRunning || !policyAutoPauseOnLift) return undefined;
+    if (!policyRunning || (!policyAutoPauseOnLift && !policyTaskAfterLift)) return undefined;
 
     const interval = window.setInterval(() => {
       const debugGlobal = globalThis as typeof globalThis & CameraDebugGlobal;
@@ -1037,8 +1112,16 @@ function So101Studio() {
       const movingJawContacts = state.contacts.filter((contact) => (
         contactPairKey(contact.body1, contact.body2) === contactPairKey('red_cube', 'moving_jaw_so101_v1')
       )).length;
+      const contactPairCounts = debugGlobal.__so101ContactPairCounts ?? {};
+      const gripperContactHistory = contactPairCounts[contactPairKey('red_cube', 'gripper')] ?? 0;
+      const movingJawContactHistory = contactPairCounts[contactPairKey('red_cube', 'moving_jaw_so101_v1')] ?? 0;
+      const hasLiftedGraspHistory = gripperContactHistory >= 50 && movingJawContactHistory >= 20;
 
-      if (lift >= policyAutoPauseLiftThreshold && hasCurrentGripperContact && hasCurrentMovingJawContact) {
+      const liftSwitchThreshold = policyTaskAfterLift ? policyTaskAfterLiftThreshold : policyAutoPauseLiftThreshold;
+      const hasSwitchContact = policyTaskAfterLift
+        ? hasLiftedGraspHistory || (hasCurrentGripperContact && hasCurrentMovingJawContact)
+        : hasCurrentGripperContact && hasCurrentMovingJawContact;
+      if (lift >= liftSwitchThreshold && hasSwitchContact) {
         autoPauseStableTicksRef.current += 1;
       } else {
         autoPauseStableTicksRef.current = 0;
@@ -1046,6 +1129,21 @@ function So101Studio() {
 
       if (autoPauseStableTicksRef.current >= policyAutoPauseStableTicks) {
         autoPauseStableTicksRef.current = 0;
+        if (policyTaskAfterLift && activePolicyTask !== policyTaskAfterLift) {
+          setActivePolicyTask(policyTaskAfterLift);
+          debugGlobal.__so101TaskPhase = {
+            initialTask: policyTask,
+            activeTask: policyTaskAfterLift,
+            taskAfterLift: policyTaskAfterLift,
+            switched: true,
+            lift,
+            time: state.time,
+          };
+          setHudText('[data-policy-task]', `Task: ${policyTaskAfterLift}`);
+          return;
+        }
+
+        if (!policyAutoPauseOnLift) return;
         setHeldPolicyCtrl(state.ctrl);
         debugGlobal.__so101AutoPause = {
           armed: true,
@@ -1064,7 +1162,7 @@ function So101Studio() {
     }, 100);
 
     return () => window.clearInterval(interval);
-  }, [policyRunning]);
+  }, [activePolicyTask, policyRunning]);
 
   return (
     <MujocoProvider>
@@ -1100,10 +1198,10 @@ function So101Studio() {
           queueStrategy={policyQueueStrategy}
           prefetchThreshold={policyPrefetchThreshold}
           frequency={policyPreset.frequency}
-          task={policyTask}
+          task={activePolicyTask}
           robotType={policyPreset.robotType}
           stateMode={policyPreset.stateMode}
-          cameraPlan={policyPreset.policyCamera}
+          cameraPlan={activePolicyCameraPlan}
           onPolicyTelemetry={onPolicyTelemetry}
         />
         <ScenarioLighting preset="studio" intensity={1.55} />
@@ -1112,6 +1210,8 @@ function So101Studio() {
       <PolicyHud
         policyRunning={policyRunning}
         autoPauseOnLift={policyAutoPauseOnLift}
+        activeTask={activePolicyTask}
+        taskAfterLift={policyTaskAfterLift}
         showPolicyCameraDebug={showPolicyCameraDebug}
         setShowPolicyCameraDebug={setShowPolicyCameraDebug}
         showMujocoCameraDebug={showMujocoCameraDebug}
