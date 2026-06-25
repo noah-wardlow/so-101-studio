@@ -111,6 +111,12 @@ def policy_action_to_sim_radians(action: np.ndarray) -> np.ndarray:
     return sim_action
 
 
+def as_numpy(value: Any) -> np.ndarray:
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().numpy()
+    return np.asarray(value)
+
+
 def ordered_images(images: dict[str, str]) -> list[Image.Image]:
     preferred_keys = [
         "top",
@@ -188,7 +194,7 @@ class MolmoAct2Runtime:
                 enable_cuda_graph=self.enable_cuda_graph,
             )
 
-        action_policy_chunk = np.asarray(out.actions, dtype=np.float32)
+        action_policy_chunk = as_numpy(out.actions).astype(np.float32)
         if action_policy_chunk.ndim == 1:
             action_policy_chunk = action_policy_chunk[None, :]
         action_policy_chunk = action_policy_chunk[:, :6]
