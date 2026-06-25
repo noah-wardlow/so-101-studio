@@ -12,7 +12,7 @@
     "policy:act12": "scripts/run_policy_server.sh",
     "verify:policy": "node scripts/verify_policy_rollout.mjs",
     "verify": "npm run verify:act12",
-    "verify:act12": "node scripts/verify_policy_rollout.mjs '--url=http://127.0.0.1:3001/' '--inference-url=http://127.0.0.1:8776/infer' --require-cameras=true --duration-ms=40000 --actions-per-request=100 --min-responses=3 --max-target-distance=0.10 --min-cube-lift=0.08 --min-target-contact-count=1 --min-gripper-contact-count=25 --min-moving-jaw-contact-count=25 --object-body=red_cube --target-body=green_target --camera-frame-dir=artifacts/act12-frames --screenshot=artifacts/act12-verify.png --report=artifacts/act12-verify.json"
+    "verify:act12": "node scripts/verify_policy_rollout.mjs '--url=http://127.0.0.1:3001/?policy=act12' '--inference-url=http://127.0.0.1:8776/infer' --require-cameras=true --duration-ms=40000 --actions-per-request=100 --min-responses=3 --max-target-distance=0.10 --min-cube-lift=0.08 --min-target-contact-count=1 --min-gripper-contact-count=25 --min-moving-jaw-contact-count=25 --object-body=red_cube --target-body=green_target --camera-frame-dir=artifacts/act12-frames --screenshot=artifacts/act12-verify.png --report=artifacts/act12-verify.json"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
