@@ -10,9 +10,7 @@ The default scene opens the MolmoAct2 SO-100/101 route:
 - browser app: `http://127.0.0.1:3001/`
 
 MolmoAct2 is the default interactive route and is still being tuned for
-placement. The ACT 12D route below remains the verified pick-place reference.
-
-The ACT 12D route remains the verified pick-place reference:
+placement. The ACT 12D route below is the pick-place reference route:
 
 - model: `davidlinjiahao/lerobot_so101_base_sim_pickplace`
 - dataset/stats: `davidlinjiahao/lerobot_batch_001`
@@ -142,6 +140,8 @@ Scene and physics tuning:
 
 - `targetX`, `targetY`, `targetZ`
 - `targetSX`, `targetSY`, `targetSZ`
+- `goalX`, `goalY`, `goalZ`
+- `goalRgba=r,g,b,a`
 - `cubeMass`
 - `cubeFriction`
 - `cubeSolref`

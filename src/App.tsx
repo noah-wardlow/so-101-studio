@@ -209,6 +209,19 @@ function vectorSearchParam(
   return [parts[0], parts[1], parts[2]];
 }
 
+function rgbaSearchParam(name: string): [number, number, number, number] | undefined {
+  const value = searchParams.get(name);
+  if (!value) return undefined;
+  const parts = value.split(',').map((part) => Number(part.trim()));
+  if (parts.length !== 4 || !parts.every(Number.isFinite)) return undefined;
+  return [
+    Math.min(1, Math.max(0, parts[0])),
+    Math.min(1, Math.max(0, parts[1])),
+    Math.min(1, Math.max(0, parts[2])),
+    Math.min(1, Math.max(0, parts[3])),
+  ];
+}
+
 function vectorTuple(value: unknown): [number, number, number] | null {
   if (!Array.isArray(value) || value.length !== 3) return null;
   const tuple = value.map(Number);
@@ -310,6 +323,7 @@ const sceneConfig: SceneConfig = {
     redCubeSolimp,
     redCubeCondim: optionalNumericSearchParam('cubeCondim'),
     includeAct12BinWalls,
+    greenTargetRgba: rgbaSearchParam('goalRgba'),
   }),
 };
 
@@ -910,9 +924,9 @@ function PolicyHud({
         <FieldGroup className="gap-3">
           <FieldLabel className="policy-field pointer-events-auto">
             <Field className="gap-1.5">
-              <FieldTitle>Policy preset</FieldTitle>
+              <FieldTitle>Policy + scene preset</FieldTitle>
               <NativeSelect
-                aria-label="Policy preset"
+                aria-label="Policy and scene preset"
                 className="w-full"
                 disabled={policyRunning}
                 onChange={(event) => onPolicyChange(event.target.value)}

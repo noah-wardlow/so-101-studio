@@ -46,6 +46,7 @@ export interface So101SceneObjectOptions {
   redCubeSolimp?: string;
   redCubeCondim?: number;
   includeAct12BinWalls?: boolean;
+  greenTargetRgba?: [number, number, number, number];
 }
 
 export const ACT_12D_HOME_JOINTS = [
@@ -314,6 +315,13 @@ export function createSo101SceneObjects(
   greenTargetPosition = preset.greenTargetPosition,
   options: So101SceneObjectOptions = {},
 ): SceneObject[] {
+  const targetRgba = options.greenTargetRgba ?? preset.greenTargetRgba;
+  const targetWallRgba: [number, number, number, number] = [
+    targetRgba[0],
+    targetRgba[1],
+    targetRgba[2],
+    Math.min(0.75, Math.max(0.35, targetRgba[3])),
+  ];
   const objects: SceneObject[] = [
     {
       name: 'table',
@@ -344,7 +352,7 @@ export function createSo101SceneObjects(
       type: 'box',
       size: preset.greenTargetSize,
       position: greenTargetPosition,
-      rgba: preset.greenTargetRgba,
+      rgba: targetRgba,
       friction: '2 0.3 0.1',
       solref: '0.01 1',
       solimp: '0.95 0.99 0.001 0.5 2',
@@ -365,7 +373,7 @@ export function createSo101SceneObjects(
         greenTargetPosition[1],
         greenTargetPosition[2] + 0.045,
       ],
-      rgba: [preset.greenTargetRgba[0], preset.greenTargetRgba[1], preset.greenTargetRgba[2], 0.5],
+      rgba: targetWallRgba,
       friction: '2 0.3 0.1',
       solref: '0.01 1',
       solimp: '0.95 0.99 0.001 0.5 2',
@@ -380,7 +388,7 @@ export function createSo101SceneObjects(
         greenTargetPosition[1],
         greenTargetPosition[2] + 0.045,
       ],
-      rgba: [preset.greenTargetRgba[0], preset.greenTargetRgba[1], preset.greenTargetRgba[2], 0.5],
+      rgba: targetWallRgba,
       friction: '2 0.3 0.1',
       solref: '0.01 1',
       solimp: '0.95 0.99 0.001 0.5 2',
@@ -395,7 +403,7 @@ export function createSo101SceneObjects(
         greenTargetPosition[1] - 0.09,
         greenTargetPosition[2] + 0.045,
       ],
-      rgba: [preset.greenTargetRgba[0], preset.greenTargetRgba[1], preset.greenTargetRgba[2], 0.5],
+      rgba: targetWallRgba,
       friction: '2 0.3 0.1',
       solref: '0.01 1',
       solimp: '0.95 0.99 0.001 0.5 2',
@@ -410,7 +418,7 @@ export function createSo101SceneObjects(
         greenTargetPosition[1] + 0.09,
         greenTargetPosition[2] + 0.045,
       ],
-      rgba: [preset.greenTargetRgba[0], preset.greenTargetRgba[1], preset.greenTargetRgba[2], 0.5],
+      rgba: targetWallRgba,
       friction: '2 0.3 0.1',
       solref: '0.01 1',
       solimp: '0.95 0.99 0.001 0.5 2',
